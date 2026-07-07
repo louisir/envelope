@@ -1,0 +1,61 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.tmp
+*.temp
+*.log
+.idea/
+*.iml
+
+# Local developer overrides
+/scripts/*.local.ps1
+
+# Local automation screenshots, UI dumps, E2E reports, and diagnostics
+/artifacts/
+/tmp/
+
+# Rust
+/target/
+
+# Flutter / Dart
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.pub-cache/
+**/.pub/
+**/build/
+**/coverage/
+**/doc/api/
+
+# Android / Gradle local state
+**/.gradle/
+**/.kotlin/
+**/local.properties
+**/captures/
+**/.cxx/
+**/android/app/debug/
+**/android/app/profile/
+**/android/app/release/
+**/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+
+# Android native libraries generated from Rust FFI
+**/android/app/src/main/jniLibs/**/*.so
+
+# Signing material
+**/key.properties
+**/android/signing/
+**/*.jks
+**/*.keystore
+**/*.p12
+**/*.pfx
+**/*-private.pem
+
+# Local server runtime / deployment overrides
+/envelope-server.sqlite3*
+/deploy/envelope-server/*.env
+!/deploy/envelope-server/*.env.example
+
+# Local release bundles / generated packages
+/target/portable/

@@ -1,0 +1,25 @@
+[Unit]
+Description=Envelope Server
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User={ENVELOPE_SERVER_USER}
+Group={ENVELOPE_SERVER_GROUP}
+EnvironmentFile={ENVELOPE_SERVER_CONFIG_DIR}/envelope-server.env
+ExecStart={ENVELOPE_SERVER_INSTALL_DIR}/envelope-server --bind ${ENVELOPE_SERVER_BIND} --database ${ENVELOPE_SERVER_DATABASE}
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={ENVELOPE_SERVER_DATA_DIR}
+CapabilityBoundingSet=
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

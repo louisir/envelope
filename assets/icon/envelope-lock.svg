@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Envelope locked envelope icon</title>
+  <desc id="desc">A white sealed envelope with a lock badge on an orange background.</desc>
+  <rect width="1024" height="1024" rx="224" fill="#F97316"/>
+  <path d="M168 326C168 286 200 254 240 254H784C824 254 856 286 856 326V720C856 760 824 792 784 792H240C200 792 168 760 168 720V326Z" fill="#FFF7ED"/>
+  <path d="M170 332C170 290 204 256 246 256H778C820 256 854 290 854 332V720C854 762 820 796 778 796H246C204 796 170 762 170 720V332Z" fill="none" stroke="#9A3412" stroke-width="18" opacity="0.16"/>
+  <path d="M212 350L512 584L812 350" fill="none" stroke="#C2410C" stroke-width="42" stroke-linecap="round" stroke-linejoin="round" opacity="0.52"/>
+  <path d="M212 724L430 536" fill="none" stroke="#FB923C" stroke-width="38" stroke-linecap="round" opacity="0.72"/>
+  <path d="M812 724L594 536" fill="none" stroke="#FB923C" stroke-width="38" stroke-linecap="round" opacity="0.72"/>
+  <path d="M238 370L512 574L786 370" fill="none" stroke="#7C2D12" stroke-width="20" stroke-linecap="round" stroke-linejoin="round" opacity="0.2"/>
+  <circle cx="730" cy="672" r="164" fill="#1F3A5F"/>
+  <circle cx="730" cy="672" r="164" fill="none" stroke="#FFF7ED" stroke-width="28"/>
+  <path d="M662 646V604C662 566 692 536 730 536C768 536 798 566 798 604V646" fill="none" stroke="#FFF7ED" stroke-width="34" stroke-linecap="round"/>
+  <rect x="636" y="632" width="188" height="132" rx="34" fill="#FFF7ED"/>
+  <circle cx="730" cy="690" r="18" fill="#1F3A5F"/>
+  <path d="M730 710V736" stroke="#1F3A5F" stroke-width="18" stroke-linecap="round"/>
+</svg>

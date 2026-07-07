@@ -1,0 +1,15 @@
+[package]
+name = "envelope-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+anyhow.workspace = true
+envelope-core = { path = "../envelope-core" }
+envelope-server-core = { path = "../envelope-server-core" }
+serde.workspace = true
+serde_json.workspace = true

@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Envelope Android 使用手册</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #fff7ed;
+      --panel: #ffffff;
+      --ink: #24150f;
+      --muted: #65716d;
+      --line: #d9e2de;
+      --field-line: #cfd8d4;
+      --brand: #f97316;
+      --brand-strong: #ea580c;
+      --brand-soft: #ffedd5;
+      --accent: #1f3a5f;
+      --accent-soft: #eaf2ef;
+      --warn: #9a3412;
+      --warn-bg: #fffbf5;
+      --warn-line: #ffd7aa;
+      --code: #43302b;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.65;
+    }
+
+    header {
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .wrap {
+      width: min(1080px, calc(100% - 32px));
+      margin: 0 auto;
+    }
+
+    .hero {
+      padding: 34px 0 28px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--accent);
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+
+    .logo {
+      display: inline-grid;
+      place-items: center;
+      width: 40px;
+      height: 40px;
+      overflow: visible;
+    }
+
+    .logo svg {
+      display: block;
+      width: 40px;
+      height: 40px;
+    }
+
+    h1 {
+      margin: 22px 0 8px;
+      font-size: clamp(30px, 5vw, 48px);
+      line-height: 1.12;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 34px 0 12px;
+      font-size: 24px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 22px 0 8px;
+      font-size: 18px;
+      line-height: 1.35;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 8px 0;
+    }
+
+    .lead {
+      max-width: 760px;
+      color: var(--muted);
+      font-size: 17px;
+    }
+
+    nav {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      padding: 16px 0 20px;
+    }
+
+    nav a {
+      display: block;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--ink);
+      text-decoration: none;
+      font-size: 14px;
+    }
+
+    main {
+      padding: 22px 0 48px;
+    }
+
+    section {
+      padding: 2px 0;
+    }
+
+    .card {
+      margin: 14px 0;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    .notice {
+      padding: 14px 16px;
+      border: 1px solid var(--warn-line);
+      border-radius: 8px;
+      background: var(--warn-bg);
+      color: var(--warn);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 14px;
+    }
+
+    ol,
+    ul {
+      margin: 8px 0 8px 22px;
+      padding: 0;
+    }
+
+    li {
+      margin: 6px 0;
+    }
+
+    code,
+    pre {
+      font-family: "Cascadia Mono", "Consolas", monospace;
+    }
+
+    code {
+      padding: 2px 5px;
+      border-radius: 6px;
+      background: var(--brand-soft);
+      color: var(--code);
+      font-size: 0.92em;
+    }
+
+    pre {
+      overflow-x: auto;
+      margin: 12px 0 0;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--accent);
+      color: #fff7ed;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 34px 1fr;
+      gap: 12px;
+      align-items: start;
+      margin: 14px 0;
+    }
+
+    .num {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      background: var(--brand);
+      color: #fff;
+      font-weight: 800;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    th,
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--brand-soft);
+      font-weight: 800;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    footer {
+      padding: 24px 0 40px;
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap hero">
+      <div class="brand">
+        <span class="logo" aria-hidden="true">
+          <svg viewBox="0 0 40 40" role="img" focusable="false">
+            <rect x="0" y="0" width="40" height="40" rx="9" fill="#f97316" />
+            <path d="M9 13.5h22a2.5 2.5 0 0 1 2.5 2.5v13A2.5 2.5 0 0 1 31 31.5H9A2.5 2.5 0 0 1 6.5 29V16A2.5 2.5 0 0 1 9 13.5Z" fill="none" stroke="#fff" stroke-width="2.6" stroke-linejoin="round" />
+            <path d="M8.5 16.5 20 24.2l11.5-7.7" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+            <circle cx="31.5" cy="31.5" r="8.2" fill="#1f3a5f" stroke="#fff" stroke-width="2.8" />
+            <path d="M28.5 30.6h6v4.7h-6z" fill="none" stroke="#fff" stroke-width="1.7" stroke-linejoin="round" />
+            <path d="M29.6 30.6v-1.3a1.9 1.9 0 0 1 3.8 0v1.3" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" />
+          </svg>
+        </span>
+        <span>Envelope Android</span>
+      </div>
+      <h1>使用手册</h1>
+      <p class="lead">本手册对应当前 Android 客户端，说明如何安装 APK、创建或恢复身份、添加联系人、发送消息和文件、使用群组，以及通过密封 / 拆封文件完成离线转交。</p>
+      <p class="meta">适用版本：Envelope Android 当前版本。不同手机系统的安装确认和文件授权界面可能略有差异。</p>
+    </div>
+    <nav class="wrap" aria-label="目录">
+      <a href="#install">安装和升级</a>
+      <a href="#identity">身份和备份</a>
+      <a href="#contacts">联系人</a>
+      <a href="#chat">聊天和文件</a>
+      <a href="#groups">群组</a>
+      <a href="#sync">消息同步</a>
+      <a href="#seal">密封和拆封</a>
+      <a href="#maintenance">安全和维护</a>
+      <a href="#faq">常见问题</a>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <section id="install">
+      <h2>1. 安装和升级</h2>
+      <ol>
+        <li>获取正式 release APK。</li>
+        <li>在 Android 系统中允许本次安装来源。</li>
+        <li>打开 APK 并完成安装。</li>
+        <li>升级时直接安装新版 APK；已有身份、联系人、消息和设置会保留。</li>
+      </ol>
+      <p>如果需要全新测试，先在系统设置中卸载 Envelope，再安装 APK。卸载会删除本机身份、联系人、消息、群组、密封历史和本地设置。</p>
+    </section>
+
+    <section id="identity">
+      <h2>2. 身份和本地备份</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>创建身份</h3>
+          <ol>
+            <li>进入底部“设置”。</li>
+            <li>在“我的身份”里填写显示名。</li>
+            <li>生成并抄写 BIP39 24 词恢复词。</li>
+            <li>点击“创建身份”。</li>
+          </ol>
+        </div>
+        <div class="card">
+          <h3>恢复身份</h3>
+          <ol>
+            <li>输入原来的 24 词恢复词。</li>
+            <li>填写显示名。</li>
+            <li>点击“从恢复词替换本机身份”。</li>
+            <li>确认替换后，App 会清空当前本机身份和本地聊天现场，再写入恢复出的身份。</li>
+          </ol>
+        </div>
+      </div>
+      <div class="notice">24 词只能恢复同一个加密身份。联系人、群组、同步服务入口和本机使用现场不会只靠 24 词自动恢复；这些内容需要使用“本地备份”恢复。</div>
+      <h3>本地备份</h3>
+      <p>设置页的“本地备份”会用 24 词加密导出显示名、身份 key id、同步服务入口、联系人、群组和群成员。本地备份当前不包含聊天记录，也不包含 received / sealed 文件缓存。</p>
+      <ol>
+        <li>导出前先在恢复词输入框里输入当前身份的 24 词。</li>
+        <li>点击“导出本地备份”，备份文件保存到 <code>Download/Envelope/backups</code>。</li>
+        <li>恢复时选择备份文件并输入匹配的 24 词。</li>
+        <li>恢复会替换当前本机身份、联系人、群组和同步服务入口。</li>
+      </ol>
+    </section>
+
+    <section id="contacts">
+      <h2>3. 联系人</h2>
+      <p>联系人通过签名 contact / IntroBundle 建立。添加前应核对 fingerprint；截图、转发或复制的 contact 只能证明数据没有被篡改，不能自动证明现实身份。</p>
+      <div class="grid">
+        <div class="card">
+          <h3>二维码互加</h3>
+          <ol>
+            <li>一方在“联系人”页点击“加好友”，选择“出示二维码”。</li>
+            <li>另一方点击“扫描二维码”。</li>
+            <li>扫描方确认 fingerprint 后保存联系人。</li>
+            <li>如果同步服务可用，出示方会收到扫描方的回传信息，并在确认后保存对方。</li>
+          </ol>
+        </div>
+        <div class="card">
+          <h3>粘贴 contact</h3>
+          <ol>
+            <li>复制对方提供的 contact 内容。</li>
+            <li>在“加好友”中选择“粘贴 contact”。</li>
+            <li>核对 fingerprint 后添加。</li>
+          </ol>
+        </div>
+      </div>
+      <p>联系人页支持“全部 / 联系人 / 群聊”过滤，过滤标签会显示未读角标；联系人和群聊统一用列表入口展示。联系人可以设置备注或删除。删除联系人会发送端到端加密的 contact-control 通知，对端收到后会同步删除对应联系人。</p>
+    </section>
+
+    <section id="chat">
+      <h2>4. 聊天和文件</h2>
+      <p>聊天页可以选择联系人或群组。文本发送后输入框会立即清空；发送失败会留下待重试状态，后续同步或手动重试会继续投递。</p>
+      <h3>发送状态</h3>
+      <ul>
+        <li><strong>已发送</strong>：已经通过直连链路送出。</li>
+        <li><strong>待接收</strong>：已经写入服务端离线邮箱，等待对方拉取。</li>
+        <li><strong>待重试</strong>：当前路径不可用，App 会保留记录并在后续重试。</li>
+        <li><strong>已送达</strong>：对方已解密入库并返回 ACK。</li>
+      </ul>
+      <h3>文件</h3>
+      <p>在线文件上限为 64 MiB。文件会被客户端分片、加密和校验，服务器只看到密文信封。图片和视频会在对话中显示预览；点击文件时优先调用系统默认应用打开，无法打开时再退回到保存路径。</p>
+      <p>接收文件默认保存到 <code>Download/Envelope/received</code>。如果文件缓存被清空，聊天记录会标记“文件已删除”，并不再显示可打开入口。</p>
+      <h3>消息管理</h3>
+      <p>聊天列表支持加载更早消息、选择多条消息和删除本机记录。删除只影响本机数据库，不会删除其他设备上的记录。</p>
+    </section>
+
+    <section id="groups">
+      <h2>5. 群组</h2>
+      <p>创建群组至少要选择 2 位联系人；加上创建者本人，群组最少 3 人。群主创建后本机立即显示群，受邀者在与邀请者的单聊中收到群邀请消息，可以接受或拒绝。</p>
+      <h3>三种群策略</h3>
+      <ul>
+        <li><strong>普通群</strong>：受邀者接受后成为活跃成员，可以收发群消息。</li>
+        <li><strong>验证群</strong>：成员可以在成员页核对并信任其他成员 fingerprint；发送群消息时只投递给本地信任的活跃成员。</li>
+        <li><strong>共识群</strong>：受邀者接受后进入“等待共识”状态；活跃成员背书达到 60% 阈值后，候选成员才成为活跃成员。</li>
+      </ul>
+      <h3>群成员管理</h3>
+      <p>群详情页可以查看成员状态和 fingerprint。群主可以改群名、更新群头像 seed、邀请新成员和移除成员。普通群和验证群可以手动信任成员 fingerprint；共识群中该操作变为“背书入群”。</p>
+      <h3>退群和解散</h3>
+      <p>点击“退出群组”后，本机会立即退出当前群聊界面并隐藏该群，再后台通知其他成员。群主退出或有效成员少于 3 人时，群会自动解散，并携带解散原因。</p>
+      <h3>群消息和群文件</h3>
+      <p>群聊没有密封入口。群文本和群文件通过在线聊天发送，客户端按当前有效成员逐一加密 fan-out；每个成员收到的是独立密文信封。</p>
+    </section>
+
+    <section id="sync">
+      <h2>6. 消息同步</h2>
+      <p>同步服务入口是中继矩阵的 bootstrap 地址。进入“设置”里的“消息同步”，在“同步服务入口”输入域名或 IP 并保存。App 会通过该入口刷新签名节点清单，然后在可用节点之间自动切换。</p>
+      <ul>
+        <li>自动同步会注册当前设备 route、拉取 mailbox、ACK 已解密消息并查询送达状态。</li>
+        <li>“立即同步”会立刻执行一次注册、拉取、ACK 和待重试消息处理。</li>
+        <li>App 前台运行时会更积极地拉取 mailbox，以降低消息到达延迟。</li>
+        <li>节点清单和节点身份都需要签名校验；节点不能解密消息内容。</li>
+      </ul>
+      <p>如果未配置同步服务，点对点直连和离线密封仍可使用，但 mailbox、送达回执、二维码互加回传和多入口节点池不会运行。</p>
+    </section>
+
+    <section id="seal">
+      <h2>7. 密封和拆封</h2>
+      <p>密封是点对点离线转交能力：发送方选择一位联系人，把文本或文件密封成只有该联系人能打开的离线信封文件，然后通过邮箱、网盘、U 盘等外部工具或渠道转交。外部工具或渠道只负责搬运密文。</p>
+      <div class="grid">
+        <div class="card">
+          <h3>发送方密封</h3>
+          <ol>
+            <li>进入与某位联系人的单聊。</li>
+            <li>点击顶部“密封”。</li>
+            <li>选择密封文本或本地文件。</li>
+            <li>生成的文件保存到 <code>Download/Envelope/sealed</code>。</li>
+          </ol>
+        </div>
+        <div class="card">
+          <h3>接收方拆封</h3>
+          <ol>
+            <li>进入底部“拆封”。</li>
+            <li>选择离线信封文件，或粘贴 base64 内容。</li>
+            <li>点击“解密导入”。</li>
+            <li>拆封成功后，消息或文件会进入本机聊天记录。</li>
+          </ol>
+        </div>
+      </div>
+      <p>“离线”不是单纯指断网，而是指这次传输不走 Envelope 的在线投递链路，也不依赖 P2P、服务端路由或服务端离线邮箱。</p>
+    </section>
+
+    <section id="maintenance">
+      <h2>8. 安全和维护</h2>
+      <h3>本地锁屏</h3>
+      <p>设置页可以开启“打开 App 时验证身份”。开启后，打开 App 和执行高风险操作时会使用系统 PIN、密码或生物识别确认。</p>
+      <h3>清空文件缓存</h3>
+      <p>设置页的“清空文件缓存”会删除 <code>Download/Envelope/received</code> 和 <code>Download/Envelope/sealed</code> 下的文件，并把对应聊天记录或密封历史标记为文件已删除。</p>
+      <h3>诊断日志</h3>
+      <p>诊断日志记录操作状态、耗时、错误和网络路径，不记录消息内容、文件内容、私钥或恢复词。可以在设置页导出或清空诊断日志。</p>
+      <h3>关于页</h3>
+      <p>关于页显示版本信息、APK 签名证书 SHA-256 和内置用户手册入口。用户手册随 APK 打包，不需要单独的网页服务。</p>
+    </section>
+
+    <section id="faq">
+      <h2>9. 常见问题</h2>
+      <h3>为什么 24 词恢复后没有联系人？</h3>
+      <p>24 词只恢复身份密钥。联系人、群组和同步服务入口属于本机使用现场，需要用本地备份恢复。</p>
+      <h3>为什么群邀请点了接受后还要等待？</h3>
+      <p>接受邀请需要写入本机状态，并把状态同步给相关成员。共识群还需要活跃成员背书达到阈值后才会变为可收发消息的活跃成员。</p>
+      <h3>为什么消息显示待接收？</h3>
+      <p>这表示消息已经进入服务端离线邮箱，对方上线并完成同步后才会变为已送达。</p>
+      <h3>为什么文件打开失败？</h3>
+      <p>Android 系统和厂商文件权限策略可能不同。App 会优先用默认应用打开文件；如果系统拒绝，会退回到保存路径或提示错误。</p>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">Last updated: 2026-07-07</div>
+  </footer>
+</body>
+</html>
