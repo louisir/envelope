@@ -27,6 +27,8 @@ const String _defaultDisplayName = 'Envelope User';
 const String _defaultDesktopMessageHint = '你好，这是一条来自 Envelope UI 的消息。';
 const String _defaultEnvelopeServerUrl = '';
 const String _androidUserManualAsset = 'assets/manual/android-user-manual.html';
+const String _sourceRepositoryUrl = 'https://github.com/louisir/envelope';
+const String _appLicense = 'AGPL-3.0-or-later';
 const String _appDisplayVersion = String.fromEnvironment(
   'ENVELOPE_APP_VERSION',
   defaultValue: 'v1.0.0.dev',
@@ -10509,6 +10511,24 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
                     ),
                   ],
                 ),
+                const SizedBox(height: 18),
+                _CommandGroup(
+                  title: l10n.projectSection,
+                  children: [
+                    _ActionButton(
+                      icon: Icons.code_outlined,
+                      label: l10n.sourceCodeRepository,
+                      enabled: true,
+                      onPressed: () =>
+                          unawaited(_openAndroidSourceRepository(context)),
+                    ),
+                    _AboutInfoRow(
+                      icon: Icons.balance_outlined,
+                      label: l10n.license,
+                      value: _appLicense,
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -11164,6 +11184,22 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(builder: (_) => const _AndroidUserManualPage()),
     );
+  }
+
+  Future<void> _openAndroidSourceRepository(BuildContext context) async {
+    try {
+      final opened = await _secureStore.openExternalUrl(_sourceRepositoryUrl);
+      if (!opened && context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('无法打开源代码仓库')));
+      }
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('无法打开源代码仓库：$error')));
+    }
   }
 
   Widget _buildAndroidComposer(BuildContext context) {
@@ -14530,6 +14566,56 @@ class _ActionButton extends StatelessWidget {
           minimumSize: const Size.fromHeight(42),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
+      ),
+    );
+  }
+}
+
+class _AboutInfoRow extends StatelessWidget {
+  const _AboutInfoRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xfffbfcfa),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xffd9e2de)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: const Color(0xff35544a)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 3),
+                SelectableText(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xff65716d),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

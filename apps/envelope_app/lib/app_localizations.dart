@@ -222,6 +222,9 @@ class EnvelopeLocalizations {
       _zh ? '版本、签名与使用帮助。' : 'Version, signing, and help.';
   String get helpSection => _zh ? '帮助' : 'Help';
   String get openUserManual => _zh ? '用户手册' : 'User manual';
+  String get projectSection => _zh ? '项目' : 'Project';
+  String get sourceCodeRepository => _zh ? '源代码' : 'Source code';
+  String get license => _zh ? '许可证' : 'License';
   String get signingFingerprint =>
       _zh ? 'APK 签名 SHA-256' : 'APK signing SHA-256';
 

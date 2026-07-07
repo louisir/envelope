@@ -134,6 +134,7 @@ class MainActivity : FlutterFragmentActivity() {
                             }
                             result.success(dir.absolutePath)
                         }
+                        "openExternalUrl" -> openExternalUrl(call.arguments, result)
                         "openContainingFolder" -> openContainingFolder(call.arguments, result)
                         "openSavedFileLocation" -> openSavedFileLocation(call.arguments, result)
                         "pickOfflineEnvelopeFile" -> pickOfflineEnvelopeFile(result)
@@ -691,6 +692,20 @@ class MainActivity : FlutterFragmentActivity() {
             Log.w("EnvelopeSecureStore", "Activity launch failed: $intent", error)
             false
         }
+    }
+
+    private fun openExternalUrl(arguments: Any?, result: MethodChannel.Result) {
+        val args = arguments as? Map<*, *> ?: error("arguments are required")
+        val rawUrl = args["url"] as? String ?: error("url is required")
+        val uri = Uri.parse(rawUrl.trim())
+        val scheme = uri.scheme?.lowercase()
+        if (scheme != "http" && scheme != "https") {
+            error("only http and https URLs are supported")
+        }
+        val intent = Intent(Intent.ACTION_VIEW)
+            .setData(uri)
+            .addCategory(Intent.CATEGORY_BROWSABLE)
+        result.success(tryStartActivity(intent))
     }
 
     private fun pickOfflineEnvelopeFile(result: MethodChannel.Result) {

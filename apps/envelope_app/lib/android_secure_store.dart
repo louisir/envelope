@@ -141,6 +141,18 @@ class AndroidSecureIdentityStore {
     return value;
   }
 
+  Future<bool> openExternalUrl(String url) async {
+    if (!isSupported) return false;
+    final normalizedUrl = url.trim();
+    if (normalizedUrl.isEmpty) {
+      throw const SecureStoreException('No URL was provided');
+    }
+    return await _channel.invokeMethod<bool>('openExternalUrl', {
+          'url': normalizedUrl,
+        }) ??
+        false;
+  }
+
   Future<AndroidOpenLocationResult> openContainingFolder(String path) async {
     if (!isSupported) {
       throw const SecureStoreException('Android secure store is unavailable');
