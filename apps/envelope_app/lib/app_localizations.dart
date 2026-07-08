@@ -128,8 +128,9 @@ class EnvelopeLocalizations {
   String get recoveryPhraseLabel =>
       _zh ? 'BIP39 24 词恢复词' : 'BIP39 24-word recovery phrase';
   String get recoveryPhraseHint => _zh
-      ? '输入 24 个恢复词，或点击生成恢复词'
-      : 'Enter 24 words, or generate a recovery phrase';
+      ? '创建后短暂显示；恢复时输入 24 个词后选择本地备份'
+      : 'Shown briefly after creation; enter 24 words before restoring a backup';
+  String get clearRecoveryPhrase => _zh ? '清空恢复词' : 'Clear recovery phrase';
   String nativeCoreMissing(String? error) => _zh
       ? (error == null ? 'Rust native core 未加载' : 'Rust native core 未加载：$error')
       : (error == null
@@ -202,10 +203,27 @@ class EnvelopeLocalizations {
   String get messageSyncNow => _zh ? '立即同步' : 'Sync now';
   String get localBackupSection => _zh ? '本地备份' : 'Local backup';
   String get localBackupDescription => _zh
-      ? '使用 24 词加密备份身份显示名、联系人、群组和同步入口；不包含聊天记录和文件缓存。'
-      : 'Encrypts display name, contacts, groups, and sync entry with the 24-word phrase. Messages and cached files are not included.';
+      ? '备份身份显示名、联系人、群组和同步入口；新备份使用本机身份自加密，不保存恢复词。'
+      : 'Backs up display name, contacts, groups, and sync entry. New backups are self-encrypted with the local identity; the recovery phrase is not stored.';
   String get exportLocalBackup => _zh ? '导出本地备份' : 'Export local backup';
-  String get restoreLocalBackup => _zh ? '从本地备份恢复' : 'Restore local backup';
+  String get restoreLocalBackup =>
+      _zh ? '用恢复词从本地备份恢复' : 'Restore from phrase and local backup';
+  String get autoBackupTitle => _zh ? '自动备份' : 'Auto backup';
+  String get autoBackupDescription => _zh
+      ? 'App 打开或回到前台时按策略检查，到期后自动写入 Download/Envelope/backups。'
+      : 'When the app is open or resumes, it checks the schedule and writes due backups to Download/Envelope/backups.';
+  String get autoBackupInterval => _zh ? '备份间隔' : 'Backup interval';
+  String get autoBackupRetention => _zh ? '保留备份' : 'Keep backups';
+  String get autoBackupOff => _zh ? '关闭' : 'Off';
+  String autoBackupEveryHours(int hours) =>
+      _zh ? '每 $hours 小时' : 'Every $hours hours';
+  String autoBackupKeepCount(int count) =>
+      _zh ? '最近 $count 个' : 'Latest $count';
+  String get autoBackupNeverRun => _zh ? '尚未自动备份' : 'No auto backup yet';
+  String autoBackupLastSuccess(String time) =>
+      _zh ? '上次备份：$time' : 'Last backup: $time';
+  String autoBackupLastError(String error) =>
+      _zh ? '备份异常：$error' : 'Backup issue: $error';
   String get diagnosticsSection => _zh ? '诊断' : 'Diagnostics';
   String get diagnosticsLogTitle => _zh ? '诊断日志' : 'Diagnostic logs';
   String get diagnosticsLogDescription => _zh

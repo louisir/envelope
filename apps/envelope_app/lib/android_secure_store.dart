@@ -75,6 +75,37 @@ class AndroidSecureIdentityStore {
     });
   }
 
+  Future<AndroidAutoBackupSettings> readAutoBackupSettings() async {
+    if (!isSupported) return AndroidAutoBackupSettings.defaults;
+    final value = await _channel.invokeMethod<Object?>(
+      'readAutoBackupSettings',
+    );
+    if (value is Map) {
+      return AndroidAutoBackupSettings.fromMap(value.cast<Object?, Object?>());
+    }
+    return AndroidAutoBackupSettings.defaults;
+  }
+
+  Future<void> writeAutoBackupSettings({
+    required int intervalHours,
+    required int retentionCount,
+  }) async {
+    if (!isSupported) {
+      throw const SecureStoreException('Android secure store is unavailable');
+    }
+    await _channel.invokeMethod<void>('writeAutoBackupSettings', {
+      'intervalHours': intervalHours,
+      'retentionCount': retentionCount,
+    });
+  }
+
+  Future<void> writeAutoBackupLastAtUnixMs(int? lastBackupAtUnixMs) async {
+    if (!isSupported) return;
+    await _channel.invokeMethod<void>('writeAutoBackupLastAtUnixMs', {
+      'lastBackupAtUnixMs': lastBackupAtUnixMs,
+    });
+  }
+
   Future<bool> readLocalLockEnabled() async {
     if (!isSupported) return false;
     return await _channel.invokeMethod<bool>('readLocalLockEnabled') ?? false;
@@ -192,34 +223,73 @@ class AndroidSecureIdentityStore {
   }
 
   Future<AndroidPickedFile?> pickOfflineEnvelopeFile() async {
-    if (!isSupported) {
-      throw const SecureStoreException('Android secure store is unavailable');
-    }
-    final value = await _channel.invokeMethod<Object?>(
+    return _pickAndroidFile(
       'pickOfflineEnvelopeFile',
+      invalidMessage: 'offline envelope picker returned invalid file',
     );
-    if (value == null) return null;
-    if (value is Map) {
-      return AndroidPickedFile.fromMap(value.cast<Object?, Object?>());
-    }
-    throw const SecureStoreException(
-      'offline envelope picker returned invalid file',
+  }
+
+  Future<AndroidPickedFile?> pickLocalBackupFile() async {
+    return _pickAndroidFile(
+      'pickLocalBackupFile',
+      invalidMessage: 'local backup picker returned invalid file',
     );
   }
 
   Future<AndroidPickedFile?> pickFileForSealing() async {
+    return _pickAndroidFile(
+      'pickFileForSealing',
+      invalidMessage: 'file picker returned invalid file',
+    );
+  }
+
+  Future<AndroidPickedFile?> _pickAndroidFile(
+    String method, {
+    required String invalidMessage,
+  }) async {
     if (!isSupported) {
       throw const SecureStoreException('Android secure store is unavailable');
     }
-    final value = await _channel.invokeMethod<Object?>('pickFileForSealing');
+    final Object? value;
+    try {
+      value = await _channel.invokeMethod<Object?>(method);
+    } on PlatformException catch (error) {
+      final message = _androidFilePlatformErrorMessage(error);
+      if (message != null) {
+        throw SecureStoreException(message);
+      }
+      rethrow;
+    }
     if (value == null) return null;
     if (value is Map) {
       return AndroidPickedFile.fromMap(value.cast<Object?, Object?>());
     }
-    throw const SecureStoreException('file picker returned invalid file');
+    throw SecureStoreException(invalidMessage);
   }
 
-  Future<AndroidPickedFile?> pickLocalBackupFile() => pickOfflineEnvelopeFile();
+  static String? _androidFilePlatformErrorMessage(PlatformException error) {
+    final message = error.message?.trim();
+    final fallback = switch (error.code) {
+      'ENVELOPE_FILE_PICKER_UNAVAILABLE' =>
+        '未找到可用的系统文件选择器。请启用/安装文件管理器，或改用 base64 粘贴导入。',
+      'ENVELOPE_FILE_PICKER_BUSY' => '文件选择器已在运行。',
+      'ENVELOPE_FILE_PICKER_EMPTY' => '未选择文件。',
+      'ENVELOPE_FILE_IO' => '文件读取失败。',
+      _ => null,
+    };
+    if (fallback != null) {
+      return message == null || message.isEmpty ? fallback : message;
+    }
+
+    final details = error.details?.toString() ?? '';
+    final combined = '$message\n$details';
+    if (error.code == 'ENVELOPE_SECURE_STORE' &&
+        combined.contains('No Activity found') &&
+        combined.contains('android.intent.action.OPEN_DOCUMENT')) {
+      return '未找到可用的系统文件选择器。请启用/安装文件管理器，或改用 base64 粘贴导入。';
+    }
+    return null;
+  }
 
   Future<Uint8List> readPickedFileChunk({
     required String uri,
@@ -229,10 +299,20 @@ class AndroidSecureIdentityStore {
     if (!isSupported) {
       throw const SecureStoreException('Android secure store is unavailable');
     }
-    final value = await _channel.invokeMethod<Uint8List>(
-      'readPickedFileChunk',
-      {'uri': uri, 'offset': offset, 'length': length},
-    );
+    final Uint8List? value;
+    try {
+      value = await _channel.invokeMethod<Uint8List>('readPickedFileChunk', {
+        'uri': uri,
+        'offset': offset,
+        'length': length,
+      });
+    } on PlatformException catch (error) {
+      final message = _androidFilePlatformErrorMessage(error);
+      if (message != null) {
+        throw SecureStoreException(message);
+      }
+      rethrow;
+    }
     if (value == null) {
       throw const SecureStoreException('file chunk reader returned null');
     }
@@ -405,6 +485,20 @@ class AndroidSecureIdentityStore {
         }) ??
         false;
   }
+
+  Future<int> pruneSavedFiles({
+    required String childDir,
+    required String prefix,
+    required int keep,
+  }) async {
+    if (!isSupported) return 0;
+    return await _channel.invokeMethod<int>('pruneSavedFiles', {
+          'childDir': childDir,
+          'prefix': prefix,
+          'keep': keep,
+        }) ??
+        0;
+  }
 }
 
 class AndroidPickedFile {
@@ -506,6 +600,41 @@ class AndroidClearEnvelopeCacheResult {
   }
 }
 
+class AndroidAutoBackupSettings {
+  const AndroidAutoBackupSettings({
+    required this.intervalHours,
+    required this.retentionCount,
+    required this.lastBackupAtUnixMs,
+  });
+
+  static const defaults = AndroidAutoBackupSettings(
+    intervalHours: 24,
+    retentionCount: 7,
+    lastBackupAtUnixMs: null,
+  );
+
+  final int intervalHours;
+  final int retentionCount;
+  final int? lastBackupAtUnixMs;
+
+  bool get enabled => intervalHours > 0;
+
+  factory AndroidAutoBackupSettings.fromMap(Map<Object?, Object?> value) {
+    final rawInterval =
+        (value['intervalHours'] as num?)?.toInt() ?? defaults.intervalHours;
+    final rawRetention =
+        (value['retentionCount'] as num?)?.toInt() ?? defaults.retentionCount;
+    final rawLast = (value['lastBackupAtUnixMs'] as num?)?.toInt();
+    return AndroidAutoBackupSettings(
+      intervalHours: rawInterval < 0 ? 0 : rawInterval,
+      retentionCount: rawRetention <= 0
+          ? defaults.retentionCount
+          : rawRetention,
+      lastBackupAtUnixMs: rawLast == null || rawLast <= 0 ? null : rawLast,
+    );
+  }
+}
+
 class AndroidOpenLocationResult {
   const AndroidOpenLocationResult({
     required this.status,
@@ -519,6 +648,7 @@ class AndroidOpenLocationResult {
 
   bool get openedDirectly => status == 'openedDirectly';
   bool get openedPickerAtFolder => status == 'openedPickerAtFolder';
+  bool get unavailable => status == 'unavailable';
 
   factory AndroidOpenLocationResult.fromValue(Object? value) {
     if (value == null) {

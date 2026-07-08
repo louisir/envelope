@@ -62,12 +62,47 @@ const String _androidOfflineFileManifestMime =
 const String _androidOfflineFileChunkMime =
     'application/vnd.westwardsoft.envelope.offline-file-chunk';
 const String _androidLocalBackupKind = 'envelope.android.local-backup';
+const String _androidLocalBackupFileKind = 'envelope.android.local-backup-file';
+const String _androidLocalBackupOpaqueScheme =
+    'identity-self-opaque-envelope.local-backup.v2';
 const String _androidLocalBackupMime =
     'application/vnd.envelope.local-backup+json';
+const String _androidLocalBackupPayloadMime =
+    'application/vnd.envelope.local-backup.payload+json';
+const String _androidLocalBackupPayloadName = 'envelope-local-backup.json';
+const String _androidLocalBackupFilePrefix = 'envelope-local-backup-';
 
 enum _AndroidHomeTab { about, contacts, chat, unseal, settings }
 
 enum _AndroidConversationFilter { all, contacts, groups }
+
+class _AndroidLocalBackupWriteResult {
+  const _AndroidLocalBackupWriteResult({
+    required this.file,
+    required this.store,
+    required this.prunedCount,
+  });
+
+  final AndroidSavedFile file;
+  final AndroidChatStore store;
+  final int prunedCount;
+}
+
+class _AndroidLocalBackupForRestore {
+  const _AndroidLocalBackupForRestore({
+    required this.recovered,
+    required this.store,
+    required this.syncServiceUrl,
+    required this.autoBackupIntervalHours,
+    required this.autoBackupRetentionCount,
+  });
+
+  final NativeIdentitySummary recovered;
+  final AndroidChatStore store;
+  final String syncServiceUrl;
+  final int? autoBackupIntervalHours;
+  final int? autoBackupRetentionCount;
+}
 
 class _AndroidGroupControlMessageRef {
   const _AndroidGroupControlMessageRef({
@@ -164,6 +199,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     seconds: 2,
   );
   static const Duration _androidLocalLockResumeGrace = Duration(seconds: 30);
+  static const Duration _recoveryPhraseVisibleTimeout = Duration(minutes: 2);
   static const int _androidGroupDeliveryConcurrency = 3;
   static const int _androidGroupFileDeliveryConcurrency = 2;
 
@@ -216,8 +252,15 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
   bool _androidEndpointPublishInFlight = false;
   bool _androidMailboxPullInFlight = false;
   bool _androidDeliveryReceiptSyncInFlight = false;
+  bool _androidLocalBackupInFlight = false;
+  int _androidAutoBackupIntervalHours =
+      AndroidAutoBackupSettings.defaults.intervalHours;
+  int _androidAutoBackupRetentionCount =
+      AndroidAutoBackupSettings.defaults.retentionCount;
   DateTime? _androidLastMessageSyncAt;
+  DateTime? _androidLastLocalBackupAt;
   String? _androidLastMessageSyncError;
+  String? _androidLastLocalBackupError;
   SecureIdentityRecord? _secureIdentity;
   AndroidChatStore _androidChatStore = AndroidChatStore.empty();
   List<AndroidSealedEnvelopeRecord> _androidSealHistory = const [];
@@ -245,6 +288,8 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
   String? _nativeError;
   Process? _p2pProcess;
   Timer? _androidMailboxPullTimer;
+  Timer? _androidAutoBackupTimer;
+  Timer? _recoveryPhraseClearTimer;
   StreamSubscription<String>? _p2pStdoutSubscription;
   StreamSubscription<String>? _p2pStderrSubscription;
 
@@ -296,6 +341,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     _myP2pTicketController = TextEditingController();
     _peerP2pTicketController = TextEditingController();
     _recoveryPhraseController = TextEditingController();
+    _recoveryPhraseController.addListener(_scheduleRecoveryPhraseClear);
     _androidEnvelopeBase64Controller = TextEditingController();
     _androidMessageController = TextEditingController();
     _envelopeServerUrlController = TextEditingController();
@@ -309,6 +355,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     unawaited(_refreshSecureIdentity());
     unawaited(_refreshAndroidChatStore());
     if (Platform.isAndroid) {
+      unawaited(_loadAndroidAutoBackupSettings());
       unawaited(
         _loadAndroidSyncServiceUrl().whenComplete(() {
           if (mounted) _startAndroidMailboxAutoPull();
@@ -333,6 +380,8 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     _sendOutputPathController.dispose();
     _myP2pTicketController.dispose();
     _peerP2pTicketController.dispose();
+    _recoveryPhraseClearTimer?.cancel();
+    _recoveryPhraseController.removeListener(_scheduleRecoveryPhraseClear);
     _recoveryPhraseController.dispose();
     _androidEnvelopeBase64Controller.dispose();
     _androidMessageController.dispose();
@@ -344,6 +393,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     unawaited(_p2pStderrSubscription?.cancel());
     _p2pProcess?.kill();
     _androidMailboxPullTimer?.cancel();
+    _androidAutoBackupTimer?.cancel();
     unawaited(_androidP2p.stop());
     super.dispose();
   }
@@ -354,8 +404,11 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive ||
         state == AppLifecycleState.hidden) {
+      _clearRecoveryPhrase(refresh: false);
       _androidMailboxPullTimer?.cancel();
       _androidMailboxPullTimer = null;
+      _androidAutoBackupTimer?.cancel();
+      _androidAutoBackupTimer = null;
       if (_androidLocalLockEnabled) {
         _androidLocalLockBackgroundedAt = DateTime.now();
       }
@@ -363,6 +416,8 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     }
     if (state != AppLifecycleState.resumed) return;
     _startAndroidMailboxAutoPull();
+    _scheduleAndroidAutoBackupTimer();
+    unawaited(_maybeRunAndroidAutoBackup(reason: 'app_resumed'));
     if (!_androidLocalLockEnabled) return;
     final backgroundedAt = _androidLocalLockBackgroundedAt;
     _androidLocalLockBackgroundedAt = null;
@@ -419,6 +474,102 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     } catch (error) {
       debugPrint('Envelope sync service URL load failed: $error');
     }
+  }
+
+  Future<void> _loadAndroidAutoBackupSettings() async {
+    if (!Platform.isAndroid || !_secureStore.isSupported) return;
+    try {
+      final settings = await _secureStore.readAutoBackupSettings();
+      if (!mounted) return;
+      setState(() {
+        _androidAutoBackupIntervalHours = settings.intervalHours;
+        _androidAutoBackupRetentionCount = settings.retentionCount;
+        _androidLastLocalBackupAt = settings.lastBackupAtUnixMs == null
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(settings.lastBackupAtUnixMs!);
+      });
+      _scheduleAndroidAutoBackupTimer();
+      unawaited(_maybeRunAndroidAutoBackup(reason: 'settings_loaded'));
+    } catch (error) {
+      if (mounted) {
+        setState(() => _androidLastLocalBackupError = error.toString());
+      }
+      debugPrint('Envelope auto backup settings load failed: $error');
+    }
+  }
+
+  Future<void> _setAndroidAutoBackupIntervalHours(int intervalHours) async {
+    final normalized = intervalHours < 0 ? 0 : intervalHours;
+    if (mounted) {
+      setState(() {
+        _androidAutoBackupIntervalHours = normalized;
+        _androidLastLocalBackupError = null;
+      });
+    }
+    await _secureStore.writeAutoBackupSettings(
+      intervalHours: normalized,
+      retentionCount: _androidAutoBackupRetentionCount,
+    );
+    _scheduleAndroidAutoBackupTimer();
+    if (normalized > 0) {
+      unawaited(_maybeRunAndroidAutoBackup(reason: 'setting_changed'));
+    }
+  }
+
+  Future<void> _setAndroidAutoBackupRetentionCount(int retentionCount) async {
+    final normalized = retentionCount <= 0
+        ? AndroidAutoBackupSettings.defaults.retentionCount
+        : retentionCount;
+    if (mounted) {
+      setState(() {
+        _androidAutoBackupRetentionCount = normalized;
+        _androidLastLocalBackupError = null;
+      });
+    }
+    await _secureStore.writeAutoBackupSettings(
+      intervalHours: _androidAutoBackupIntervalHours,
+      retentionCount: normalized,
+    );
+    try {
+      await _pruneAndroidLocalBackups();
+    } catch (error) {
+      if (mounted) {
+        setState(() => _androidLastLocalBackupError = error.toString());
+      }
+    }
+  }
+
+  bool get _androidAutoBackupEnabled => _androidAutoBackupIntervalHours > 0;
+
+  Duration get _androidAutoBackupInterval =>
+      Duration(hours: _androidAutoBackupIntervalHours);
+
+  void _scheduleAndroidAutoBackupTimer() {
+    _androidAutoBackupTimer?.cancel();
+    _androidAutoBackupTimer = null;
+    if (!Platform.isAndroid || !_androidAutoBackupEnabled) return;
+    final delay = _nextAndroidAutoBackupDelay();
+    _androidAutoBackupTimer = Timer(delay, () {
+      unawaited(
+        _maybeRunAndroidAutoBackup(
+          reason: 'timer',
+        ).whenComplete(_scheduleAndroidAutoBackupTimer),
+      );
+    });
+  }
+
+  Duration _nextAndroidAutoBackupDelay() {
+    final lastBackupAt = _androidLastLocalBackupAt;
+    if (lastBackupAt == null) {
+      return const Duration(seconds: 30);
+    }
+    final remaining = lastBackupAt
+        .add(_androidAutoBackupInterval)
+        .difference(DateTime.now());
+    if (remaining <= Duration.zero) {
+      return const Duration(seconds: 10);
+    }
+    return remaining;
   }
 
   Future<void> _saveAndroidSyncServiceUrl() => _run('保存同步服务入口', () async {
@@ -595,6 +746,33 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     );
   }
 
+  String _androidAutoBackupStatus(EnvelopeLocalizations l10n) {
+    if (!_androidAutoBackupEnabled) {
+      return l10n.autoBackupOff;
+    }
+    final error = _androidLastLocalBackupError;
+    if (error != null && error.trim().isNotEmpty) {
+      return l10n.autoBackupLastError(error);
+    }
+    final lastBackupAt = _androidLastLocalBackupAt;
+    if (lastBackupAt == null) {
+      return l10n.autoBackupNeverRun;
+    }
+    return l10n.autoBackupLastSuccess(
+      _formatAndroidMessageSyncTime(lastBackupAt),
+    );
+  }
+
+  String _androidAutoBackupIntervalLabel(
+    EnvelopeLocalizations l10n,
+    int hours,
+  ) {
+    if (hours <= 0) {
+      return l10n.autoBackupOff;
+    }
+    return l10n.autoBackupEveryHours(hours);
+  }
+
   Future<void> _run(String label, Future<void> Function() action) async {
     if (_busy) return;
     final startedAt = DateTime.now();
@@ -639,6 +817,30 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _scheduleRecoveryPhraseClear() {
+    _recoveryPhraseClearTimer?.cancel();
+    _recoveryPhraseClearTimer = null;
+    if (_recoveryPhraseController.text.trim().isEmpty) {
+      return;
+    }
+    _recoveryPhraseClearTimer = Timer(
+      _recoveryPhraseVisibleTimeout,
+      _clearRecoveryPhrase,
+    );
+  }
+
+  void _clearRecoveryPhrase({bool refresh = true}) {
+    _recoveryPhraseClearTimer?.cancel();
+    _recoveryPhraseClearTimer = null;
+    if (_recoveryPhraseController.text.isEmpty) {
+      return;
+    }
+    _recoveryPhraseController.clear();
+    if (refresh && mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _initializeAndroidLocalLock() async {
@@ -838,20 +1040,25 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
   });
 
   Future<void> _previewRecoveredIdentity() => _run('恢复词预览', () async {
-    final summary = _nativeCore.recoverIdentity(
-      displayName: _currentDisplayName,
-      recoveryPhrase: _recoveryPhraseController.text.trim(),
-    );
-    if (!mounted) return;
-    setState(() {
-      _details = [
-        'Rust native core 恢复身份成功',
-        'display name: ${summary.displayName}',
-        'key id: ${summary.keyId}',
-        'contact:',
-        summary.contactJson,
-      ].join('\n');
-    });
+    final phrase = _requiredRecoveryPhrase('请先填写 BIP39 24 词恢复词。');
+    try {
+      final summary = _nativeCore.recoverIdentity(
+        displayName: _currentDisplayName,
+        recoveryPhrase: phrase,
+      );
+      if (!mounted) return;
+      setState(() {
+        _details = [
+          'Rust native core 恢复身份成功',
+          'display name: ${summary.displayName}',
+          'key id: ${summary.keyId}',
+          'contact:',
+          summary.contactJson,
+        ].join('\n');
+      });
+    } finally {
+      _clearRecoveryPhrase();
+    }
   });
 
   String get _currentDisplayName => _displayNameController.text.trim().isEmpty
@@ -872,6 +1079,8 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     _androidServerRegistrationTicketByUri.clear();
     _androidLastMessageSyncAt = null;
     _androidLastMessageSyncError = null;
+    _androidLastLocalBackupAt = null;
+    _androidLastLocalBackupError = null;
     _androidChatStore = AndroidChatStore.empty();
     _androidSealHistory = const [];
     _androidMessageLimitsByContact.clear();
@@ -898,6 +1107,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       await AndroidDbStore.instance.close();
     }
     await _secureStore.clearIdentity();
+    await _secureStore.writeAutoBackupLastAtUnixMs(null);
   }
 
   Future<bool> _confirmAndroidIdentityReplacement() async {
@@ -1026,51 +1236,60 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       });
 
   Future<void> _saveRecoveredAndroidIdentity() async {
-    if (!await _confirmAndroidIdentityReplacement() || !mounted) return;
+    if (!await _confirmAndroidIdentityReplacement() || !mounted) {
+      _clearRecoveryPhrase();
+      return;
+    }
     await _run('保存恢复身份', () async {
       final replacingExistingIdentity = _secureIdentityReady;
-      final phrase = _recoveryPhraseController.text.trim();
-      if (phrase.isEmpty) {
-        throw const SecureStoreException('请先填写 BIP39 24 词恢复词。');
-      }
-      final summary = _nativeCore.recoverIdentity(
-        displayName: _currentDisplayName,
-        recoveryPhrase: phrase,
-      );
-      if (_secureIdentityReady &&
-          !await _requireAndroidLocalUnlockForHighRisk('恢复身份会替换当前本机身份和聊天数据。')) {
-        throw const SecureStoreException('本地锁屏认证未通过。');
-      }
+      final phrase = _requiredRecoveryPhrase('请先填写 BIP39 24 词恢复词。');
+      try {
+        final summary = _nativeCore.recoverIdentity(
+          displayName: _currentDisplayName,
+          recoveryPhrase: phrase,
+        );
+        if (_secureIdentityReady &&
+            !await _requireAndroidLocalUnlockForHighRisk(
+              '恢复身份会替换当前本机身份和聊天数据。',
+            )) {
+          throw const SecureStoreException('本地锁屏认证未通过。');
+        }
 
-      await _clearAndroidIdentityAndChatStorageForReplacement();
-      final record = await _secureStore.writeIdentity(summary.identityJson);
-      final p2pStatus = await _androidP2p.start(
-        deviceId: _androidDeviceIdFor(record),
-        onEnvelope: _handleAndroidP2pEnvelope,
-      );
-      if (!mounted) return;
-      setState(() {
-        _resetAndroidIdentityRuntimeState(identity: record);
-        _androidP2pListening = p2pStatus.listening;
-        _androidP2pTicket = p2pStatus.ticket;
-        _androidP2pAddrs = p2pStatus.addrs;
-        _androidP2pPort = p2pStatus.port;
-        _details = [
-          replacingExistingIdentity ? '本机身份已替换' : '恢复身份已写入 Android 本机加密存储',
-          'display name: ${record.displayName}',
-          'key id: ${record.keyId}',
-        ].join('\n');
-      });
+        await _clearAndroidIdentityAndChatStorageForReplacement();
+        final record = await _secureStore.writeIdentity(summary.identityJson);
+        final p2pStatus = await _androidP2p.start(
+          deviceId: _androidDeviceIdFor(record),
+          onEnvelope: _handleAndroidP2pEnvelope,
+        );
+        if (!mounted) return;
+        setState(() {
+          _resetAndroidIdentityRuntimeState(identity: record);
+          _androidP2pListening = p2pStatus.listening;
+          _androidP2pTicket = p2pStatus.ticket;
+          _androidP2pAddrs = p2pStatus.addrs;
+          _androidP2pPort = p2pStatus.port;
+          _details = [
+            replacingExistingIdentity ? '本机身份已替换' : '恢复身份已写入 Android 本机加密存储',
+            'display name: ${record.displayName}',
+            'key id: ${record.keyId}',
+          ].join('\n');
+        });
+      } finally {
+        _clearRecoveryPhrase();
+      }
     });
   }
 
-  String _requiredRecoveryPhraseForLocalBackup() {
+  String _requiredRecoveryPhrase(String message) {
     final phrase = _recoveryPhraseController.text.trim();
     if (phrase.isEmpty) {
-      throw const SecureStoreException('请先在恢复词输入框中填写 BIP39 24 词。');
+      throw SecureStoreException(message);
     }
     return phrase;
   }
+
+  String _requiredRecoveryPhraseForLocalBackup() =>
+      _requiredRecoveryPhrase('请先填写 BIP39 24 词恢复词，再选择本地备份文件。');
 
   String _androidLocalBackupFileName() {
     final stamp = DateTime.now()
@@ -1079,27 +1298,21 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         .replaceAll(':', '')
         .replaceAll('.', '')
         .replaceAll('-', '');
-    return 'envelope-local-backup-$stamp.json';
+    return '$_androidLocalBackupFilePrefix$stamp.json';
   }
 
-  Future<void> _exportAndroidLocalBackup() => _run('导出本地备份', () async {
-    final identity = _secureIdentity;
-    if (identity == null) {
-      throw const SecureStoreException('请先创建或恢复 Android 本机身份。');
-    }
-    final phrase = _requiredRecoveryPhraseForLocalBackup();
-    final recovered = _nativeCore.recoverIdentity(
-      displayName: identity.displayName,
-      recoveryPhrase: phrase,
-    );
-    if (recovered.keyId != identity.keyId) {
-      throw const SecureStoreException('恢复词与当前身份不匹配，拒绝导出备份。');
-    }
-    if (!await _requireAndroidLocalUnlockForHighRisk('导出本地备份会包含联系人、群组和本机设置。')) {
-      throw const SecureStoreException('本地锁屏认证未通过。');
-    }
-    final db = await _ensureAndroidDbStore();
-    final store = await db.exportLocalBackupStore();
+  Map<String, Object?> _androidLocalBackupContents() => const {
+    'contacts': true,
+    'groups': true,
+    'settings': true,
+    'messages': false,
+    'file_cache': false,
+  };
+
+  String _androidLocalBackupPayloadJson({
+    required SecureIdentityRecord identity,
+    required AndroidChatStore store,
+  }) {
     final syncServiceUrl = _configuredEnvelopeServerUrl;
     final payload = <String, Object?>{
       'version': 1,
@@ -1111,22 +1324,55 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       },
       'settings': {
         'sync_service_url': syncServiceUrl.isEmpty ? null : syncServiceUrl,
+        'auto_backup_interval_hours': _androidAutoBackupIntervalHours,
+        'auto_backup_retention_count': _androidAutoBackupRetentionCount,
       },
-      'contents': {
-        'contacts': true,
-        'groups': true,
-        'settings': true,
-        'messages': false,
-        'file_cache': false,
-      },
+      'contents': _androidLocalBackupContents(),
       'store': store.copyWith(messages: const []).toJson(),
     };
-    final plaintext = const JsonEncoder.withIndent('  ').convert(payload);
-    final encrypted = _nativeCore.encryptLocalBackup(
-      recoveryPhrase: phrase,
-      plaintextJson: plaintext,
+    return const JsonEncoder.withIndent('  ').convert(payload);
+  }
+
+  Future<_AndroidLocalBackupWriteResult> _createAndroidLocalBackupFile({
+    required SecureIdentityRecord identity,
+  }) async {
+    final db = await _ensureAndroidDbStore();
+    final store = await db.exportLocalBackupStore();
+    final plaintext = _androidLocalBackupPayloadJson(
+      identity: identity,
+      store: store,
     );
-    final bytes = Uint8List.fromList(utf8.encode(encrypted));
+    final plaintextBytes = Uint8List.fromList(utf8.encode(plaintext));
+    final ownContactJson = _nativeCore.contactFromIdentityJson(
+      identity.identityJson,
+    );
+    final opaque = _nativeCore.encryptOpaqueFile(
+      identityJson: identity.identityJson,
+      recipientContactJson: ownContactJson,
+      filename: _androidLocalBackupPayloadName,
+      mime: _androidLocalBackupPayloadMime,
+      payloadBytes: plaintextBytes,
+      messageCounter: DateTime.now().millisecondsSinceEpoch,
+    );
+    final wrapper = <String, Object?>{
+      'version': 2,
+      'kind': _androidLocalBackupFileKind,
+      'scheme': _androidLocalBackupOpaqueScheme,
+      'created_at_unix_ms': DateTime.now().millisecondsSinceEpoch,
+      'identity': {
+        'key_id': identity.keyId,
+        'display_name': identity.displayName,
+      },
+      'contents': _androidLocalBackupContents(),
+      'payload_filename': _androidLocalBackupPayloadName,
+      'payload_mime': _androidLocalBackupPayloadMime,
+      'payload_sha256': crypto.sha256.convert(plaintextBytes).toString(),
+      'envelope_b64': opaque.envelopeBase64,
+      'envelope_len': opaque.envelopeLength,
+    };
+    final bytes = Uint8List.fromList(
+      utf8.encode(const JsonEncoder.withIndent('  ').convert(wrapper)),
+    );
     final file = await _secureStore.createSavedFile(
       name: _androidLocalBackupFileName(),
       mime: _androidLocalBackupMime,
@@ -1137,18 +1383,273 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       file: file,
       bytes: bytes.length,
     );
-    if (!mounted) return;
-    setState(() {
-      _details = [
-        '本地备份已导出。',
-        '文件: ${finished.displayPath}',
-        '联系人: ${store.contacts.length}',
-        '群组: ${store.groups.length}',
-        '群成员记录: ${store.groupMembers.length}',
-        '聊天记录: 未包含',
-      ].join('\n');
-    });
+    final prunedCount = await _pruneAndroidLocalBackups();
+    return _AndroidLocalBackupWriteResult(
+      file: finished,
+      store: store,
+      prunedCount: prunedCount,
+    );
+  }
+
+  Future<int> _pruneAndroidLocalBackups() {
+    return _secureStore.pruneSavedFiles(
+      childDir: 'backups',
+      prefix: _androidLocalBackupFilePrefix,
+      keep: _androidAutoBackupRetentionCount,
+    );
+  }
+
+  Future<void> _markAndroidLocalBackupSucceeded(DateTime timestamp) async {
+    await _secureStore.writeAutoBackupLastAtUnixMs(
+      timestamp.millisecondsSinceEpoch,
+    );
+    if (mounted) {
+      setState(() {
+        _androidLastLocalBackupAt = timestamp;
+        _androidLastLocalBackupError = null;
+      });
+    }
+    _scheduleAndroidAutoBackupTimer();
+  }
+
+  Future<void> _exportAndroidLocalBackup() => _run('导出本地备份', () async {
+    final identity = _secureIdentity;
+    if (identity == null) {
+      throw const SecureStoreException('请先创建或恢复 Android 本机身份。');
+    }
+    if (_androidLocalBackupInFlight) {
+      throw const SecureStoreException('本地备份正在运行，请稍后再试。');
+    }
+    try {
+      if (!await _requireAndroidLocalUnlockForHighRisk(
+        '导出本地备份会包含联系人、群组和本机设置。',
+      )) {
+        throw const SecureStoreException('本地锁屏认证未通过。');
+      }
+      if (mounted) {
+        setState(() => _androidLocalBackupInFlight = true);
+      }
+      final result = await _createAndroidLocalBackupFile(identity: identity);
+      final completedAt = DateTime.now();
+      await _markAndroidLocalBackupSucceeded(completedAt);
+      if (!mounted) return;
+      setState(() {
+        _details = [
+          '本地备份已导出。',
+          '文件: ${result.file.displayPath}',
+          '格式: v2 本机身份自加密',
+          '联系人: ${result.store.contacts.length}',
+          '群组: ${result.store.groups.length}',
+          '群成员记录: ${result.store.groupMembers.length}',
+          '聊天记录: 未包含',
+          if (result.prunedCount > 0) '已清理旧备份: ${result.prunedCount}',
+        ].join('\n');
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _androidLocalBackupInFlight = false);
+      }
+      _clearRecoveryPhrase();
+    }
   });
+
+  Future<void> _maybeRunAndroidAutoBackup({required String reason}) async {
+    if (!mounted ||
+        !Platform.isAndroid ||
+        !_secureStore.isSupported ||
+        !_androidAutoBackupEnabled ||
+        _busy ||
+        _androidLocalBackupInFlight) {
+      return;
+    }
+    if (_androidLocalLockEnabled && !_androidLocalLockUnlocked) {
+      return;
+    }
+    final identity = _secureIdentity;
+    if (identity == null) {
+      return;
+    }
+    final lastBackupAt = _androidLastLocalBackupAt;
+    if (lastBackupAt != null &&
+        DateTime.now().difference(lastBackupAt) < _androidAutoBackupInterval) {
+      return;
+    }
+    await _runAndroidAutoBackup(identity: identity, reason: reason);
+  }
+
+  Future<void> _runAndroidAutoBackup({
+    required SecureIdentityRecord identity,
+    required String reason,
+  }) async {
+    if (mounted) {
+      setState(() => _androidLocalBackupInFlight = true);
+    }
+    final startedAt = DateTime.now();
+    try {
+      final result = await _createAndroidLocalBackupFile(identity: identity);
+      final completedAt = DateTime.now();
+      await _markAndroidLocalBackupSucceeded(completedAt);
+      _logDiagnostic('info', 'local_auto_backup_success', {
+        'reason': reason,
+        'contacts': result.store.contacts.length,
+        'groups': result.store.groups.length,
+        'pruned': result.prunedCount,
+        'elapsed_ms': completedAt.difference(startedAt).inMilliseconds,
+      });
+    } catch (error) {
+      if (mounted) {
+        setState(() => _androidLastLocalBackupError = error.toString());
+      }
+      _logDiagnostic('warn', 'local_auto_backup_failure', {
+        'reason': reason,
+        'error': error.toString(),
+        'elapsed_ms': DateTime.now().difference(startedAt).inMilliseconds,
+      });
+      debugPrint('Envelope local auto backup failed: $error');
+    } finally {
+      if (mounted) {
+        setState(() => _androidLocalBackupInFlight = false);
+      }
+      _scheduleAndroidAutoBackupTimer();
+    }
+  }
+
+  _AndroidLocalBackupForRestore _decodeAndroidLocalBackupForRestore({
+    required String recoveryPhrase,
+    required String backupJson,
+  }) {
+    final trimmed = backupJson.trim();
+    Object? decodedFile;
+    try {
+      decodedFile = jsonDecode(trimmed);
+    } catch (_) {
+      decodedFile = null;
+    }
+
+    if (decodedFile is Map &&
+        decodedFile['version'] == 2 &&
+        decodedFile['kind'] == _androidLocalBackupFileKind) {
+      final wrapper = decodedFile.cast<Object?, Object?>();
+      if (wrapper['scheme'] != _androidLocalBackupOpaqueScheme) {
+        throw const SecureStoreException('不支持的本地备份加密格式。');
+      }
+      final identityJson = wrapper['identity'];
+      if (identityJson is! Map) {
+        throw const SecureStoreException('本地备份缺少身份信息。');
+      }
+      final identity = identityJson.cast<Object?, Object?>();
+      final displayName = (identity['display_name']?.toString() ?? '').trim();
+      final backupKeyId = (identity['key_id']?.toString() ?? '').trim();
+      final recovered = _nativeCore.recoverIdentity(
+        displayName: displayName.isEmpty ? _defaultDisplayName : displayName,
+        recoveryPhrase: recoveryPhrase,
+      );
+      if (backupKeyId.isNotEmpty && recovered.keyId != backupKeyId) {
+        throw const SecureStoreException('恢复词与备份身份不匹配，拒绝导入。');
+      }
+      final envelopeBase64 = (wrapper['envelope_b64']?.toString() ?? '').trim();
+      if (envelopeBase64.isEmpty) {
+        throw const SecureStoreException('本地备份缺少加密数据。');
+      }
+      final ownContactJson = _nativeCore.contactFromIdentityJson(
+        recovered.identityJson,
+      );
+      final payload = _nativeCore.decryptOpaquePayload(
+        identityJson: recovered.identityJson,
+        senderContactJson: ownContactJson,
+        envelopeBase64: envelopeBase64,
+      );
+      if (payload.payloadKind != 'file' ||
+          payload.mime != _androidLocalBackupPayloadMime) {
+        throw const SecureStoreException('本地备份载荷格式无效。');
+      }
+      if (payload.senderKeyId != recovered.keyId ||
+          payload.recipientKeyId != recovered.keyId) {
+        throw const SecureStoreException('本地备份身份校验失败。');
+      }
+      final payloadBytes = payload.payloadBytes;
+      final expectedHash = (wrapper['payload_sha256']?.toString() ?? '')
+          .trim()
+          .toLowerCase();
+      if (expectedHash.isNotEmpty) {
+        final actualHash = crypto.sha256.convert(payloadBytes).toString();
+        if (actualHash != expectedHash) {
+          throw const SecureStoreException('本地备份内容校验失败。');
+        }
+      }
+      return _parseAndroidLocalBackupPayload(
+        recoveryPhrase: recoveryPhrase,
+        plaintext: utf8.decode(payloadBytes),
+        recovered: recovered,
+      );
+    }
+
+    final plaintext = _nativeCore.decryptLocalBackup(
+      recoveryPhrase: recoveryPhrase,
+      backupJson: backupJson,
+    );
+    return _parseAndroidLocalBackupPayload(
+      recoveryPhrase: recoveryPhrase,
+      plaintext: plaintext,
+    );
+  }
+
+  _AndroidLocalBackupForRestore _parseAndroidLocalBackupPayload({
+    required String recoveryPhrase,
+    required String plaintext,
+    NativeIdentitySummary? recovered,
+  }) {
+    final decoded = jsonDecode(plaintext);
+    if (decoded is! Map) {
+      throw const SecureStoreException('本地备份格式无效。');
+    }
+    if (decoded['version'] != 1 || decoded['kind'] != _androidLocalBackupKind) {
+      throw const SecureStoreException('不支持的本地备份格式。');
+    }
+    final identityJson = decoded['identity'];
+    if (identityJson is! Map) {
+      throw const SecureStoreException('本地备份缺少身份信息。');
+    }
+    final identity = identityJson.cast<Object?, Object?>();
+    final displayName = (identity['display_name']?.toString() ?? '').trim();
+    final backupKeyId = (identity['key_id']?.toString() ?? '').trim();
+    final effectiveRecovered =
+        recovered ??
+        _nativeCore.recoverIdentity(
+          displayName: displayName.isEmpty ? _defaultDisplayName : displayName,
+          recoveryPhrase: recoveryPhrase,
+        );
+    if (backupKeyId.isNotEmpty && effectiveRecovered.keyId != backupKeyId) {
+      throw const SecureStoreException('恢复词与备份身份不匹配，拒绝导入。');
+    }
+    final storeJson = decoded['store'];
+    if (storeJson is! Map) {
+      throw const SecureStoreException('本地备份缺少联系人和群组数据。');
+    }
+    final store = AndroidChatStore.fromJson(
+      storeJson.cast<String, Object?>(),
+    ).copyWith(messages: const []);
+    final settingsJson = decoded['settings'];
+    final settings = settingsJson is Map
+        ? settingsJson.cast<Object?, Object?>()
+        : const <Object?, Object?>{};
+    final syncServiceValue =
+        settings['sync_service_url']?.toString().trim() ?? '';
+    final syncServiceUrl = syncServiceValue.isEmpty
+        ? ''
+        : _normalizeEnvelopeServerUrlInput(syncServiceValue);
+    final autoBackupIntervalHours =
+        (settings['auto_backup_interval_hours'] as num?)?.toInt();
+    final autoBackupRetentionCount =
+        (settings['auto_backup_retention_count'] as num?)?.toInt();
+    return _AndroidLocalBackupForRestore(
+      recovered: effectiveRecovered,
+      store: store,
+      syncServiceUrl: syncServiceUrl,
+      autoBackupIntervalHours: autoBackupIntervalHours,
+      autoBackupRetentionCount: autoBackupRetentionCount,
+    );
+  }
 
   Future<bool> _confirmAndroidLocalBackupRestore() async {
     return await showDialog<bool>(
@@ -1176,98 +1677,85 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
   }
 
   Future<void> _importAndroidLocalBackup() async {
-    if (!await _confirmAndroidLocalBackupRestore() || !mounted) return;
+    if (!await _confirmAndroidLocalBackupRestore() || !mounted) {
+      _clearRecoveryPhrase();
+      return;
+    }
     await _run('从本地备份恢复', () async {
       final phrase = _requiredRecoveryPhraseForLocalBackup();
-      if (!await _requireAndroidLocalUnlockForHighRisk(
-        '从本地备份恢复会替换当前本机身份和使用现场。',
-      )) {
-        throw const SecureStoreException('本地锁屏认证未通过。');
-      }
-      final pickedFile = await _secureStore.pickLocalBackupFile();
-      if (pickedFile == null) {
-        throw const SecureStoreException('未选择本地备份文件。');
-      }
-      final encryptedBytes = await _readAndroidPickedFileBytes(pickedFile);
-      final encryptedJson = utf8.decode(encryptedBytes);
-      final plaintext = _nativeCore.decryptLocalBackup(
-        recoveryPhrase: phrase,
-        backupJson: encryptedJson,
-      );
-      final decoded = jsonDecode(plaintext);
-      if (decoded is! Map) {
-        throw const SecureStoreException('本地备份格式无效。');
-      }
-      if (decoded['version'] != 1 ||
-          decoded['kind'] != _androidLocalBackupKind) {
-        throw const SecureStoreException('不支持的本地备份格式。');
-      }
-      final identityJson = decoded['identity'];
-      if (identityJson is! Map) {
-        throw const SecureStoreException('本地备份缺少身份信息。');
-      }
-      final identity = identityJson.cast<Object?, Object?>();
-      final displayName = (identity['display_name']?.toString() ?? '').trim();
-      final backupKeyId = (identity['key_id']?.toString() ?? '').trim();
-      final recovered = _nativeCore.recoverIdentity(
-        displayName: displayName.isEmpty ? _defaultDisplayName : displayName,
-        recoveryPhrase: phrase,
-      );
-      if (backupKeyId.isNotEmpty && recovered.keyId != backupKeyId) {
-        throw const SecureStoreException('恢复词与备份身份不匹配，拒绝导入。');
-      }
-      final storeJson = decoded['store'];
-      if (storeJson is! Map) {
-        throw const SecureStoreException('本地备份缺少联系人和群组数据。');
-      }
-      final store = AndroidChatStore.fromJson(
-        storeJson.cast<String, Object?>(),
-      ).copyWith(messages: const []);
-      final settingsJson = decoded['settings'];
-      final settings = settingsJson is Map
-          ? settingsJson.cast<Object?, Object?>()
-          : const <Object?, Object?>{};
-      final syncServiceValue =
-          settings['sync_service_url']?.toString().trim() ?? '';
-      final syncServiceUrl = syncServiceValue.isEmpty
-          ? ''
-          : _normalizeEnvelopeServerUrlInput(syncServiceValue);
+      try {
+        if (!await _requireAndroidLocalUnlockForHighRisk(
+          '从本地备份恢复会替换当前本机身份和使用现场。',
+        )) {
+          throw const SecureStoreException('本地锁屏认证未通过。');
+        }
+        final pickedFile = await _secureStore.pickLocalBackupFile();
+        if (pickedFile == null) {
+          throw const SecureStoreException('未选择本地备份文件。');
+        }
+        final encryptedBytes = await _readAndroidPickedFileBytes(pickedFile);
+        final encryptedJson = utf8.decode(encryptedBytes);
+        final backup = _decodeAndroidLocalBackupForRestore(
+          recoveryPhrase: phrase,
+          backupJson: encryptedJson,
+        );
 
-      await _clearAndroidIdentityAndChatStorageForReplacement();
-      final record = await _secureStore.writeIdentity(recovered.identityJson);
-      final db = await _ensureAndroidDbStore();
-      await db.importLocalBackupStore(store);
-      if (syncServiceUrl.isEmpty) {
-        await _secureStore.writeSyncServiceUrl('');
-        _envelopeServerUrlController.clear();
-      } else {
-        await _secureStore.writeSyncServiceUrl(syncServiceUrl);
-        _envelopeServerUrlController.text = syncServiceUrl;
+        await _clearAndroidIdentityAndChatStorageForReplacement();
+        final record = await _secureStore.writeIdentity(
+          backup.recovered.identityJson,
+        );
+        final db = await _ensureAndroidDbStore();
+        await db.importLocalBackupStore(backup.store);
+        if (backup.syncServiceUrl.isEmpty) {
+          await _secureStore.writeSyncServiceUrl('');
+          _envelopeServerUrlController.clear();
+        } else {
+          await _secureStore.writeSyncServiceUrl(backup.syncServiceUrl);
+          _envelopeServerUrlController.text = backup.syncServiceUrl;
+        }
+        final restoredIntervalHours =
+            backup.autoBackupIntervalHours ??
+            AndroidAutoBackupSettings.defaults.intervalHours;
+        final restoredRetentionCount =
+            backup.autoBackupRetentionCount ??
+            AndroidAutoBackupSettings.defaults.retentionCount;
+        await _secureStore.writeAutoBackupSettings(
+          intervalHours: restoredIntervalHours,
+          retentionCount: restoredRetentionCount,
+        );
+        await _secureStore.writeAutoBackupLastAtUnixMs(null);
+        EnvelopeServerClient.clearNodeCache();
+        final p2pStatus = await _androidP2p.start(
+          deviceId: _androidDeviceIdFor(record),
+          onEnvelope: _handleAndroidP2pEnvelope,
+        );
+        if (!mounted) return;
+        setState(() {
+          _resetAndroidIdentityRuntimeState(identity: record);
+          _androidP2pListening = p2pStatus.listening;
+          _androidP2pTicket = p2pStatus.ticket;
+          _androidP2pAddrs = p2pStatus.addrs;
+          _androidP2pPort = p2pStatus.port;
+          _envelopeServerUrlController.text = backup.syncServiceUrl;
+          _androidAutoBackupIntervalHours = restoredIntervalHours;
+          _androidAutoBackupRetentionCount = restoredRetentionCount;
+          _androidLastLocalBackupAt = null;
+          _androidLastLocalBackupError = null;
+          _details = [
+            '本地备份已恢复。',
+            'display name: ${record.displayName}',
+            'key id: ${record.keyId}',
+            '联系人: ${backup.store.contacts.length}',
+            '群组: ${backup.store.groups.length}',
+            '聊天记录: 未恢复',
+          ].join('\n');
+        });
+        await _refreshAndroidChatStore();
+        if (Platform.isAndroid) _startAndroidMailboxAutoPull();
+        _scheduleAndroidAutoBackupTimer();
+      } finally {
+        _clearRecoveryPhrase();
       }
-      EnvelopeServerClient.clearNodeCache();
-      final p2pStatus = await _androidP2p.start(
-        deviceId: _androidDeviceIdFor(record),
-        onEnvelope: _handleAndroidP2pEnvelope,
-      );
-      if (!mounted) return;
-      setState(() {
-        _resetAndroidIdentityRuntimeState(identity: record);
-        _androidP2pListening = p2pStatus.listening;
-        _androidP2pTicket = p2pStatus.ticket;
-        _androidP2pAddrs = p2pStatus.addrs;
-        _androidP2pPort = p2pStatus.port;
-        _envelopeServerUrlController.text = syncServiceUrl;
-        _details = [
-          '本地备份已恢复。',
-          'display name: ${record.displayName}',
-          'key id: ${record.keyId}',
-          '联系人: ${store.contacts.length}',
-          '群组: ${store.groups.length}',
-          '聊天记录: 未恢复',
-        ].join('\n');
-      });
-      await _refreshAndroidChatStore();
-      if (Platform.isAndroid) _startAndroidMailboxAutoPull();
     });
   }
 
@@ -2138,6 +2626,9 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
   }
 
   void _selectAndroidHomeTab(_AndroidHomeTab tab) {
+    if (tab != _AndroidHomeTab.settings) {
+      _clearRecoveryPhrase(refresh: false);
+    }
     setState(() {
       _androidHomeTab = tab;
       if (tab != _AndroidHomeTab.chat) {
@@ -7829,11 +8320,13 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       }
     }
     if (inbound == null || contact == null) {
-      final prefix = targetSenderContact == null
-          ? '无法用任何已保存 contact 解密该离线信封。请先添加发送方 contact。'
-          : '无法用 ${_contactTitle(targetSenderContact)} 的 contact 解密该离线信封。';
-      final suffix = lastError == null ? '' : '\n最后错误：$lastError';
-      throw SecureStoreException('$prefix$suffix');
+      throw SecureStoreException(
+        _opaqueEnvelopeDecryptFailureMessage(
+          candidates: candidates,
+          targetSenderContact: targetSenderContact,
+          lastError: lastError,
+        ),
+      );
     }
     return _AndroidDecryptedOpaquePayload(
       payload: inbound,
@@ -7875,11 +8368,13 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       }
     }
     if (inbound == null || contact == null) {
-      final prefix = targetSenderContact == null
-          ? '无法用任何已保存 contact 解密该离线信封。请先添加发送方 contact。'
-          : '无法用 ${_contactTitle(targetSenderContact)} 的 contact 解密该离线信封。';
-      final suffix = lastError == null ? '' : '\n最后错误：$lastError';
-      throw SecureStoreException('$prefix$suffix');
+      throw SecureStoreException(
+        _opaqueEnvelopeDecryptFailureMessage(
+          candidates: candidates,
+          targetSenderContact: targetSenderContact,
+          lastError: lastError,
+        ),
+      );
     }
     final decrypted = inbound;
     final senderContact = contact;
@@ -7962,6 +8457,31 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       message: savedMessage,
       duplicate: !inserted,
     );
+  }
+
+  String _opaqueEnvelopeDecryptFailureMessage({
+    required List<AndroidContactRecord> candidates,
+    required AndroidContactRecord? targetSenderContact,
+    required Object? lastError,
+  }) {
+    final suffix = lastError == null ? '' : '\n最后错误：$lastError';
+    final lastErrorText = lastError?.toString() ?? '';
+    if (lastErrorText.contains(
+      'opaque envelope authentication or decryption failed',
+    )) {
+      return [
+        '无法拆封该离线信封。',
+        '它可能不是发给本机当前身份。',
+        '请确认发送方选择的是本机当前 contact；如果本机重装过，请重新交换 contact 后再密封。$suffix',
+      ].join('\n');
+    }
+    if (targetSenderContact != null) {
+      return '无法用 ${_contactTitle(targetSenderContact)} 的 contact 解密该离线信封。$suffix';
+    }
+    if (candidates.isEmpty) {
+      return '本机没有保存任何 contact。请先添加发送方 contact。$suffix';
+    }
+    return '无法用任何已保存 contact 解密该离线信封。请确认已添加发送方最新 contact。$suffix';
   }
 
   Future<_AndroidEnvelopeImportResult> _importAndroidFileTransferPayload(
@@ -10431,6 +10951,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
                   const SizedBox(height: 18),
                   _SettingsDetailsBox(
                     text: _details,
+                    onOpenFile: _openAndroidPathFile,
                     onOpenPath: _openAndroidPathFolder,
                   ),
                 ],
@@ -10957,6 +11478,17 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     }
   }
 
+  Future<void> _openAndroidPathFile(BuildContext context, String path) async {
+    try {
+      await _secureStore.openSavedFile(path: path);
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('无法打开文件：$error')));
+    }
+  }
+
   Future<void> _openAndroidSealedEnvelopeLocation(
     BuildContext context,
     AndroidSealedEnvelopeRecord record,
@@ -11174,10 +11706,20 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     BuildContext context,
     AndroidOpenLocationResult result,
   ) {
-    if (!context.mounted || !result.openedPickerAtFolder) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('已定位到保存目录，请按需使用此文件夹。')));
+    if (!context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    if (result.openedPickerAtFolder) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('已定位到保存目录，请按需使用此文件夹。')),
+      );
+      return;
+    }
+    if (result.unavailable) {
+      final folder = _androidReadableFolderPath(result.folderPath);
+      messenger.showSnackBar(
+        SnackBar(content: Text('系统无法直接定位保存目录。请点文件图标打开文件，或在文件管理器中进入 $folder。')),
+      );
+    }
   }
 
   Future<void> _openBundledUserManual(BuildContext context) async {
@@ -11576,6 +12118,116 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     bool showCloseButton = true,
   }) {
     final l10n = context.l10n;
+    const autoBackupIntervalOptions = <int>[0, 6, 12, 24, 72];
+    const autoBackupRetentionOptions = <int>[3, 7, 14, 30];
+    final autoBackupIntervalValue =
+        autoBackupIntervalOptions.contains(_androidAutoBackupIntervalHours)
+        ? _androidAutoBackupIntervalHours
+        : AndroidAutoBackupSettings.defaults.intervalHours;
+    final autoBackupRetentionValue =
+        autoBackupRetentionOptions.contains(_androidAutoBackupRetentionCount)
+        ? _androidAutoBackupRetentionCount
+        : AndroidAutoBackupSettings.defaults.retentionCount;
+    final restoreLocalBackupButton = _ActionButton(
+      icon: Icons.restore_outlined,
+      label: l10n.restoreLocalBackup,
+      enabled:
+          _secureStore.isSupported &&
+          _native != null &&
+          !_busy &&
+          !_androidLocalBackupInFlight,
+      onPressed: _settingsAction(_importAndroidLocalBackup, setSheetState),
+    );
+    final localBackupChildren = <Widget>[
+      _SettingsInfoRow(
+        icon: Icons.backup_outlined,
+        title: l10n.localBackupSection,
+        value: l10n.localBackupDescription,
+      ),
+      _SettingsInfoRow(
+        icon: Icons.schedule_outlined,
+        title: l10n.autoBackupTitle,
+        value:
+            '${l10n.autoBackupDescription}\n${_androidAutoBackupStatus(l10n)}',
+      ),
+      Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: DropdownButtonFormField<int>(
+          initialValue: autoBackupIntervalValue,
+          decoration: InputDecoration(
+            prefixIcon: const Icon(Icons.timer_outlined),
+            labelText: l10n.autoBackupInterval,
+          ),
+          items: [
+            for (final hours in autoBackupIntervalOptions)
+              DropdownMenuItem<int>(
+                value: hours,
+                child: Text(_androidAutoBackupIntervalLabel(l10n, hours)),
+              ),
+          ],
+          onChanged: _secureStore.isSupported && !_busy
+              ? (value) {
+                  if (value == null) return;
+                  setSheetState(() {
+                    _androidAutoBackupIntervalHours = value;
+                  });
+                  unawaited(
+                    _setAndroidAutoBackupIntervalHours(value).whenComplete(() {
+                      if (!mounted) return;
+                      try {
+                        setSheetState(() {});
+                      } catch (_) {}
+                    }),
+                  );
+                }
+              : null,
+        ),
+      ),
+      Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: DropdownButtonFormField<int>(
+          initialValue: autoBackupRetentionValue,
+          decoration: InputDecoration(
+            prefixIcon: const Icon(Icons.history_outlined),
+            labelText: l10n.autoBackupRetention,
+          ),
+          items: [
+            for (final count in autoBackupRetentionOptions)
+              DropdownMenuItem<int>(
+                value: count,
+                child: Text(l10n.autoBackupKeepCount(count)),
+              ),
+          ],
+          onChanged: _secureStore.isSupported && !_busy
+              ? (value) {
+                  if (value == null) return;
+                  setSheetState(() {
+                    _androidAutoBackupRetentionCount = value;
+                  });
+                  unawaited(
+                    _setAndroidAutoBackupRetentionCount(value).whenComplete(() {
+                      if (!mounted) return;
+                      try {
+                        setSheetState(() {});
+                      } catch (_) {}
+                    }),
+                  );
+                }
+              : null,
+        ),
+      ),
+      _ActionButton(
+        icon: Icons.ios_share_outlined,
+        label: l10n.exportLocalBackup,
+        enabled:
+            _secureIdentityReady &&
+            _secureStore.isSupported &&
+            _native != null &&
+            !_busy &&
+            !_androidLocalBackupInFlight,
+        onPressed: _settingsAction(_exportAndroidLocalBackup, setSheetState),
+      ),
+    ];
     return SafeArea(
       minimum: const EdgeInsets.only(bottom: 12),
       child: Material(
@@ -11654,6 +12306,12 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
                             controller: _recoveryPhraseController,
                             minLines: 3,
                             maxLines: 6,
+                            keyboardType: TextInputType.visiblePassword,
+                            autocorrect: false,
+                            enableSuggestions: false,
+                            smartDashesType: SmartDashesType.disabled,
+                            smartQuotesType: SmartQuotesType.disabled,
+                            onChanged: (_) => setSheetState(() {}),
                             style: const TextStyle(fontSize: 13, height: 1.35),
                             decoration: InputDecoration(
                               prefixIcon: const Icon(Icons.key_outlined),
@@ -11662,19 +12320,19 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
                             ),
                           ),
                         ),
+                        restoreLocalBackupButton,
                         _ActionButton(
-                          icon: Icons.restore_outlined,
-                          label: _secureIdentityReady
-                              ? l10n.replaceIdentityFromRecoveryPhrase
-                              : l10n.saveRecoveredIdentity,
+                          icon: Icons.backspace_outlined,
+                          label: l10n.clearRecoveryPhrase,
                           enabled:
-                              _secureStore.isSupported &&
-                              _native != null &&
+                              _recoveryPhraseController.text
+                                  .trim()
+                                  .isNotEmpty &&
                               !_busy,
-                          onPressed: _settingsAction(
-                            _saveRecoveredAndroidIdentity,
-                            setSheetState,
-                          ),
+                          onPressed: () {
+                            _clearRecoveryPhrase();
+                            setSheetState(() {});
+                          },
                         ),
                         if (_secureIdentityReady)
                           _ActionButton(
@@ -11701,6 +12359,11 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
                             ),
                           ),
                       ],
+                    ),
+                    const SizedBox(height: 22),
+                    _CommandGroup(
+                      title: l10n.localBackupSection,
+                      children: localBackupChildren,
                     ),
                     const SizedBox(height: 22),
                     _CommandGroup(
@@ -11802,42 +12465,6 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
                               !_busy,
                           onPressed: _settingsAction(
                             _syncAndroidMessagesFromUi,
-                            setSheetState,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 22),
-                    _CommandGroup(
-                      title: l10n.localBackupSection,
-                      children: [
-                        _SettingsInfoRow(
-                          icon: Icons.backup_outlined,
-                          title: l10n.localBackupSection,
-                          value: l10n.localBackupDescription,
-                        ),
-                        _ActionButton(
-                          icon: Icons.ios_share_outlined,
-                          label: l10n.exportLocalBackup,
-                          enabled:
-                              _secureIdentityReady &&
-                              _secureStore.isSupported &&
-                              _native != null &&
-                              !_busy,
-                          onPressed: _settingsAction(
-                            _exportAndroidLocalBackup,
-                            setSheetState,
-                          ),
-                        ),
-                        _ActionButton(
-                          icon: Icons.restore_outlined,
-                          label: l10n.restoreLocalBackup,
-                          enabled:
-                              _secureStore.isSupported &&
-                              _native != null &&
-                              !_busy,
-                          onPressed: _settingsAction(
-                            _importAndroidLocalBackup,
                             setSheetState,
                           ),
                         ),
@@ -11991,14 +12618,21 @@ class _AndroidIntroQrScanPageState extends State<_AndroidIntroQrScanPage> {
 }
 
 class _SettingsDetailsBox extends StatelessWidget {
-  const _SettingsDetailsBox({required this.text, this.onOpenPath});
+  const _SettingsDetailsBox({
+    required this.text,
+    this.onOpenFile,
+    this.onOpenPath,
+  });
 
   final String text;
+  final Future<void> Function(BuildContext context, String path)? onOpenFile;
   final Future<void> Function(BuildContext context, String path)? onOpenPath;
 
   @override
   Widget build(BuildContext context) {
+    final openFile = onOpenFile;
     final openPath = onOpenPath;
+    final canOpenSavedPath = openFile != null || openPath != null;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(12, 8, 8, 12),
@@ -12033,7 +12667,7 @@ class _SettingsDetailsBox extends StatelessWidget {
             constraints: const BoxConstraints(maxHeight: 190),
             child: Scrollbar(
               child: SingleChildScrollView(
-                child: openPath == null
+                child: !canOpenSavedPath
                     ? SelectableText(
                         text,
                         style: const TextStyle(
@@ -12051,10 +12685,18 @@ class _SettingsDetailsBox extends StatelessWidget {
                               _AndroidSavedFilePathLine(
                                 text: path,
                                 fontSize: 12,
-                                tooltip: '打开文件夹',
-                                icon: Icons.folder_open_outlined,
-                                onOpenSavedFile: () =>
-                                    unawaited(openPath(context, path)),
+                                tooltip: openFile == null ? '打开文件夹' : '打开文件',
+                                icon: openFile == null
+                                    ? Icons.folder_open_outlined
+                                    : Icons.file_open_outlined,
+                                onOpenSavedFile: () => unawaited(
+                                  (openFile ?? openPath!)(context, path),
+                                ),
+                                onOpenSavedFileLocation: openFile == null
+                                    ? null
+                                    : () => unawaited(
+                                        openPath?.call(context, path),
+                                      ),
                               )
                             else
                               SelectableText(
@@ -13332,6 +13974,11 @@ class _SideBar extends StatelessWidget {
                       controller: recoveryPhraseController,
                       minLines: 2,
                       maxLines: 4,
+                      keyboardType: TextInputType.visiblePassword,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      smartDashesType: SmartDashesType.disabled,
+                      smartQuotesType: SmartQuotesType.disabled,
                       style: const TextStyle(fontSize: 12),
                       decoration: const InputDecoration(
                         prefixIcon: Icon(Icons.key_outlined),
@@ -13662,6 +14309,20 @@ bool _looksLikeAndroidSavedFilePath(String path) {
       normalized.startsWith('/sdcard/Download/Envelope/') ||
       normalized.startsWith('/storage/') ||
       normalized.startsWith('content://');
+}
+
+String _androidReadableFolderPath(String path) {
+  final normalized = path.trim().replaceAll('\\', '/');
+  if (normalized.isEmpty) return 'Download/Envelope';
+  const storageDownloadPrefix = '/storage/emulated/0/Download/';
+  if (normalized.startsWith(storageDownloadPrefix)) {
+    return 'Download/${normalized.substring(storageDownloadPrefix.length)}';
+  }
+  const sdcardDownloadPrefix = '/sdcard/Download/';
+  if (normalized.startsWith(sdcardDownloadPrefix)) {
+    return 'Download/${normalized.substring(sdcardDownloadPrefix.length)}';
+  }
+  return normalized;
 }
 
 String _androidUserFacingMessageText(String text) {

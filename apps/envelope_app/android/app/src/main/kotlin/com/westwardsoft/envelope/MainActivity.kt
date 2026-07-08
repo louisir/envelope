@@ -52,14 +52,23 @@ class MainActivity : FlutterFragmentActivity() {
     private val chatStoreKey = "chat_store_v1"
     private val localLockEnabledKey = "local_lock_enabled_v1"
     private val syncServiceUrlKey = "sync_service_url_v1"
+    private val autoBackupIntervalHoursKey = "auto_backup_interval_hours_v1"
+    private val autoBackupRetentionCountKey = "auto_backup_retention_count_v1"
+    private val autoBackupLastAtUnixMsKey = "auto_backup_last_at_unix_ms_v1"
     private val primaryKeyAlias = "envelope_android_store_master_key_v1"
     private val fallbackKeyAlias = "envelope_android_store_master_key_aes128_v1"
     private val cbcFallbackKeyAlias = "envelope_android_store_master_key_cbc128_v1"
     private val offlineEnvelopePickRequestCode = 6118
     private val fileForSealingPickRequestCode = 6119
+    private val folderTreeAccessRequestCode = 6120
+    private val localBackupPickRequestCode = 6121
     private var adbBridgeChannel: MethodChannel? = null
     private var pendingOfflineEnvelopePickResult: MethodChannel.Result? = null
     private var pendingFileForSealingPickResult: MethodChannel.Result? = null
+    private var pendingLocalBackupPickResult: MethodChannel.Result? = null
+    private var pendingFolderTreeAccessResult: MethodChannel.Result? = null
+    private var pendingFolderTreeAccessFolder: File? = null
+    private var pendingFolderTreeAccessSavedFileUri: Uri? = null
     private var pendingLocalAuthResult: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -101,6 +110,34 @@ class MainActivity : FlutterFragmentActivity() {
                             writeEncryptedString(syncServiceUrlKey, serverUrl)
                             result.success(null)
                         }
+                        "readAutoBackupSettings" -> {
+                            result.success(readAutoBackupSettings())
+                        }
+                        "writeAutoBackupSettings" -> {
+                            val intervalHours =
+                                (call.argument<Number>("intervalHours") ?: 24).toInt()
+                            val retentionCount =
+                                (call.argument<Number>("retentionCount") ?: 7).toInt()
+                            writeEncryptedString(
+                                autoBackupIntervalHoursKey,
+                                intervalHours.coerceAtLeast(0).toString(),
+                            )
+                            writeEncryptedString(
+                                autoBackupRetentionCountKey,
+                                retentionCount.coerceAtLeast(1).toString(),
+                            )
+                            result.success(null)
+                        }
+                        "writeAutoBackupLastAtUnixMs" -> {
+                            val timestamp =
+                                call.argument<Number>("lastBackupAtUnixMs")?.toLong() ?: 0L
+                            if (timestamp > 0L) {
+                                writeEncryptedString(autoBackupLastAtUnixMsKey, timestamp.toString())
+                            } else {
+                                clearEncryptedString(autoBackupLastAtUnixMsKey)
+                            }
+                            result.success(null)
+                        }
                         "readLocalLockEnabled" -> {
                             result.success(readEncryptedString(localLockEnabledKey) == "1")
                         }
@@ -138,6 +175,7 @@ class MainActivity : FlutterFragmentActivity() {
                         "openContainingFolder" -> openContainingFolder(call.arguments, result)
                         "openSavedFileLocation" -> openSavedFileLocation(call.arguments, result)
                         "pickOfflineEnvelopeFile" -> pickOfflineEnvelopeFile(result)
+                        "pickLocalBackupFile" -> pickLocalBackupFile(result)
                         "pickFileForSealing" -> pickFileForSealing(result)
                         "readPickedFileChunk" -> readPickedFileChunk(call.arguments, result)
                         "saveReceivedFile" -> saveReceivedFile(call.arguments, result)
@@ -149,6 +187,7 @@ class MainActivity : FlutterFragmentActivity() {
                         "loadSavedFilePreview" -> loadSavedFilePreview(call.arguments, result)
                         "clearEnvelopeCache" -> clearEnvelopeCache(result)
                         "deleteSavedFile" -> deleteSavedFile(call.arguments, result)
+                        "pruneSavedFiles" -> pruneSavedFiles(call.arguments, result)
                         else -> result.notImplemented()
                     }
                 } catch (error: Throwable) {
@@ -182,6 +221,14 @@ class MainActivity : FlutterFragmentActivity() {
             handleFileForSealingPickResult(resultCode, data)
             return
         }
+        if (requestCode == localBackupPickRequestCode) {
+            handleLocalBackupPickResult(resultCode, data)
+            return
+        }
+        if (requestCode == folderTreeAccessRequestCode) {
+            handleFolderTreeAccessResult(resultCode, data)
+            return
+        }
         super.onActivityResult(requestCode, resultCode, data)
     }
 
@@ -190,6 +237,14 @@ class MainActivity : FlutterFragmentActivity() {
         pendingOfflineEnvelopePickResult = null
         pendingFileForSealingPickResult?.success(null)
         pendingFileForSealingPickResult = null
+        pendingLocalBackupPickResult?.success(null)
+        pendingLocalBackupPickResult = null
+        pendingFolderTreeAccessResult?.success(
+            pendingFolderTreeAccessFolder?.let { openFolderResult("unavailable", "none", it) },
+        )
+        pendingFolderTreeAccessResult = null
+        pendingFolderTreeAccessFolder = null
+        pendingFolderTreeAccessSavedFileUri = null
         pendingLocalAuthResult?.success(false)
         pendingLocalAuthResult = null
         super.onDestroy()
@@ -294,6 +349,19 @@ class MainActivity : FlutterFragmentActivity() {
     private fun clearIdentity() {
         clearEncryptedString(identityKey)
     }
+
+    private fun readAutoBackupSettings(): Map<String, Any?> =
+        mapOf(
+            "intervalHours" to (
+                readEncryptedString(autoBackupIntervalHoursKey)?.toIntOrNull() ?: 24
+                ).coerceAtLeast(0),
+            "retentionCount" to (
+                readEncryptedString(autoBackupRetentionCountKey)?.toIntOrNull() ?: 7
+                ).coerceAtLeast(1),
+            "lastBackupAtUnixMs" to readEncryptedString(autoBackupLastAtUnixMsKey)
+                ?.toLongOrNull()
+                ?.takeIf { it > 0L },
+        )
 
     private fun identityRecord(identityJson: String): Map<String, Any?> {
         val root = JSONObject(identityJson)
@@ -563,7 +631,7 @@ class MainActivity : FlutterFragmentActivity() {
                     if (target.isDirectory) target else target.parentFile
                 }
             } ?: error("无法定位目录：$path")
-            result.success(openFolderLocation(folder, savedFileUri))
+            openFolderLocation(folder, savedFileUri, result)
         } catch (error: Throwable) {
             result.error("ENVELOPE_SECURE_STORE", error.message, null)
         }
@@ -579,13 +647,32 @@ class MainActivity : FlutterFragmentActivity() {
             ?: error("无法定位保存目录：${rawPath ?: rawUri ?: ""}")
         try {
             verifySavedFileAccess(savedFileUri)
-            result.success(openFolderLocation(folder, savedFileUri))
+            openFolderLocation(folder, savedFileUri, result)
         } catch (error: Throwable) {
             result.error("ENVELOPE_SECURE_STORE", error.message, null)
         }
     }
 
-    private fun openFolderLocation(folder: File, savedFileUri: Uri? = null): Map<String, Any?> {
+    private fun openFolderLocation(
+        folder: File,
+        savedFileUri: Uri? = null,
+        result: MethodChannel.Result,
+    ) {
+        val opened = openFolderLocationDirectly(folder, savedFileUri)
+        if (opened != null) {
+            result.success(opened)
+            return
+        }
+        if (requestFolderTreeAccess(folder, savedFileUri, result)) {
+            return
+        }
+        result.success(openFolderResult("unavailable", "none", folder))
+    }
+
+    private fun openFolderLocationDirectly(
+        folder: File,
+        savedFileUri: Uri? = null,
+    ): Map<String, Any?>? {
         if (tryOpenSamsungMyFilesFolder(folder)) {
             return openFolderResult("openedDirectly", "samsungMyFiles", folder)
         }
@@ -595,10 +682,7 @@ class MainActivity : FlutterFragmentActivity() {
         if (tryOpenFileFolder(folder, savedFileUri)) {
             return openFolderResult("openedDirectly", "resourceFolder", folder)
         }
-        if (tryOpenDocumentTreeFolder(folder)) {
-            return openFolderResult("openedPickerAtFolder", "documentTree", folder)
-        }
-        error("没有可打开该文件夹的应用：${folder.absolutePath}")
+        return null
     }
 
     private fun openFolderResult(
@@ -612,7 +696,9 @@ class MainActivity : FlutterFragmentActivity() {
     )
 
     private fun tryOpenDocumentFolder(folder: File, savedFileUri: Uri? = null): Boolean {
-        val documentUri = externalStorageDocumentUriForFolder(folder) ?: return false
+        val documentUri = grantedExternalStorageDocumentUriForFolder(folder)
+            ?: externalStorageDocumentUriForFolder(folder)
+            ?: return false
         val viewIntent = Intent(Intent.ACTION_VIEW)
             .setDataAndType(documentUri, DocumentsContract.Document.MIME_TYPE_DIR)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -620,33 +706,127 @@ class MainActivity : FlutterFragmentActivity() {
         return tryStartActivity(viewIntent)
     }
 
-    private fun tryOpenDocumentTreeFolder(folder: File): Boolean {
-        val documentUri = externalStorageDocumentUriForFolder(folder) ?: return false
+    private fun requestFolderTreeAccess(
+        folder: File,
+        savedFileUri: Uri?,
+        result: MethodChannel.Result,
+    ): Boolean {
+        val initialUri = externalStorageDocumentUriForFolder(folder) ?: return false
+        if (pendingFolderTreeAccessResult != null) {
+            result.error("ENVELOPE_SECURE_STORE", "目录授权请求已在运行。", null)
+            return true
+        }
         val treeIntent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
-            .putExtra(DocumentsContract.EXTRA_INITIAL_URI, documentUri)
+            .putExtra(DocumentsContract.EXTRA_INITIAL_URI, initialUri)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             .addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             .addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
             .addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
-        return tryStartActivity(treeIntent)
+        return try {
+            pendingFolderTreeAccessResult = result
+            pendingFolderTreeAccessFolder = folder
+            pendingFolderTreeAccessSavedFileUri = savedFileUri
+            startActivityForResult(treeIntent, folderTreeAccessRequestCode)
+            true
+        } catch (error: Throwable) {
+            pendingFolderTreeAccessResult = null
+            pendingFolderTreeAccessFolder = null
+            pendingFolderTreeAccessSavedFileUri = null
+            Log.w("EnvelopeSecureStore", "Folder tree access request failed: $treeIntent", error)
+            false
+        }
+    }
+
+    private fun handleFolderTreeAccessResult(resultCode: Int, data: Intent?) {
+        val result = pendingFolderTreeAccessResult ?: return
+        val folder = pendingFolderTreeAccessFolder
+        val savedFileUri = pendingFolderTreeAccessSavedFileUri
+        pendingFolderTreeAccessResult = null
+        pendingFolderTreeAccessFolder = null
+        pendingFolderTreeAccessSavedFileUri = null
+        if (folder == null) {
+            result.success(null)
+            return
+        }
+        if (resultCode != Activity.RESULT_OK) {
+            result.success(openFolderResult("unavailable", "none", folder))
+            return
+        }
+        val treeUri = data?.data
+        if (treeUri == null) {
+            result.success(openFolderResult("unavailable", "none", folder))
+            return
+        }
+        persistTreePermission(data, treeUri)
+        val opened = openFolderLocationDirectly(folder, savedFileUri)
+            ?: if (tryOpenDocumentTreeUri(treeUri, savedFileUri)) {
+                openFolderResult("openedDirectly", "documentTreeGrant", folder)
+            } else {
+                null
+            }
+        result.success(opened ?: openFolderResult("unavailable", "none", folder))
+    }
+
+    private fun tryOpenDocumentTreeUri(treeUri: Uri, savedFileUri: Uri? = null): Boolean {
+        val documentId = try {
+            DocumentsContract.getTreeDocumentId(treeUri)
+        } catch (_: Throwable) {
+            return false
+        }
+        val documentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
+        val viewIntent = Intent(Intent.ACTION_VIEW)
+            .setDataAndType(documentUri, DocumentsContract.Document.MIME_TYPE_DIR)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            .also { addSavedFileReadGrant(it, savedFileUri) }
+        return tryStartActivity(viewIntent)
     }
 
     private fun externalStorageDocumentUriForFolder(folder: File): Uri? {
-        val externalRoot = Environment.getExternalStorageDirectory().absoluteFile
-        val folderFile = folder.absoluteFile
-        val relative = folderFile.relativeToOrNull(externalRoot)?.path
-            ?.replace(File.separatorChar, '/')
-            ?: return null
-        val documentId = if (relative.isBlank()) {
-            "primary:"
-        } else {
-            "primary:$relative"
-        }
+        val documentId = externalStorageDocumentIdForFolder(folder) ?: return null
         return DocumentsContract.buildDocumentUri(
             "com.android.externalstorage.documents",
             documentId,
         )
     }
+
+    private fun externalStorageDocumentIdForFolder(folder: File): String? {
+        val externalRoot = Environment.getExternalStorageDirectory().absoluteFile
+        val folderFile = folder.absoluteFile
+        val relative = folderFile.relativeToOrNull(externalRoot)?.path
+            ?.replace(File.separatorChar, '/')
+            ?: return null
+        return if (relative.isBlank()) {
+            "primary:"
+        } else {
+            "primary:$relative"
+        }
+    }
+
+    private fun grantedExternalStorageDocumentUriForFolder(folder: File): Uri? {
+        val documentId = externalStorageDocumentIdForFolder(folder) ?: return null
+        var bestTreeUri: Uri? = null
+        var bestTreeIdLength = -1
+        for (permission in contentResolver.persistedUriPermissions) {
+            if (!permission.isReadPermission) continue
+            val treeUri = permission.uri
+            if (treeUri.authority != "com.android.externalstorage.documents") continue
+            val treeId = try {
+                DocumentsContract.getTreeDocumentId(treeUri)
+            } catch (_: Throwable) {
+                continue
+            }
+            if (documentIdIsInsideTree(documentId, treeId) && treeId.length > bestTreeIdLength) {
+                bestTreeUri = treeUri
+                bestTreeIdLength = treeId.length
+            }
+        }
+        return bestTreeUri?.let { DocumentsContract.buildDocumentUriUsingTree(it, documentId) }
+    }
+
+    private fun documentIdIsInsideTree(documentId: String, treeId: String): Boolean =
+        documentId == treeId ||
+            documentId.startsWith("$treeId/") ||
+            (treeId.endsWith(":") && documentId.startsWith(treeId))
 
     private fun tryOpenSamsungMyFilesFolder(folder: File): Boolean {
         if (packageManager.getLaunchIntentForPackage("com.sec.android.app.myfiles") == null) {
@@ -662,6 +842,9 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     private fun tryOpenFileFolder(folder: File, savedFileUri: Uri? = null): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            return false
+        }
         val uri = Uri.fromFile(folder)
         val intent = Intent(Intent.ACTION_VIEW)
             .setDataAndType(uri, "resource/folder")
@@ -710,45 +893,109 @@ class MainActivity : FlutterFragmentActivity() {
 
     private fun pickOfflineEnvelopeFile(result: MethodChannel.Result) {
         if (pendingOfflineEnvelopePickResult != null) {
-            error("offline envelope picker is already running")
+            result.error("ENVELOPE_FILE_PICKER_BUSY", "文件选择器已在运行。", null)
+            return
         }
         pendingOfflineEnvelopePickResult = result
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
-            type = "*/*"
-            putExtra(
-                Intent.EXTRA_MIME_TYPES,
-                arrayOf(
-                    "application/octet-stream",
-                    "application/envelope",
-                    "text/plain",
-                ),
-            )
-        }
-        try {
-            startActivityForResult(intent, offlineEnvelopePickRequestCode)
-        } catch (error: Throwable) {
+        val started = launchFilePicker(
+            requestCode = offlineEnvelopePickRequestCode,
+            result = result,
+            mimeTypes = arrayOf(
+                "application/octet-stream",
+                "application/envelope",
+                "text/plain",
+            ),
+            unavailableMessage = "未找到可用的系统文件选择器。请启用/安装文件管理器，或改用 base64 粘贴导入。",
+        )
+        if (!started) {
             pendingOfflineEnvelopePickResult = null
-            result.error("ENVELOPE_SECURE_STORE", error.message, null)
+        }
+    }
+
+    private fun pickLocalBackupFile(result: MethodChannel.Result) {
+        if (pendingLocalBackupPickResult != null) {
+            result.error("ENVELOPE_FILE_PICKER_BUSY", "文件选择器已在运行。", null)
+            return
+        }
+        pendingLocalBackupPickResult = result
+        val started = launchFilePicker(
+            requestCode = localBackupPickRequestCode,
+            result = result,
+            mimeTypes = arrayOf(
+                "application/vnd.envelope.local-backup+json",
+                "application/json",
+                "text/json",
+                "text/plain",
+                "application/octet-stream",
+            ),
+            unavailableMessage = "未找到可用的系统文件选择器。请启用/安装文件管理器后重试。",
+        )
+        if (!started) {
+            pendingLocalBackupPickResult = null
         }
     }
 
     private fun pickFileForSealing(result: MethodChannel.Result) {
         if (pendingFileForSealingPickResult != null) {
-            error("file picker is already running")
+            result.error("ENVELOPE_FILE_PICKER_BUSY", "文件选择器已在运行。", null)
+            return
         }
         pendingFileForSealingPickResult = result
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
-            type = "*/*"
-        }
-        try {
-            startActivityForResult(intent, fileForSealingPickRequestCode)
-        } catch (error: Throwable) {
+        val started = launchFilePicker(
+            requestCode = fileForSealingPickRequestCode,
+            result = result,
+            mimeTypes = null,
+            unavailableMessage = "未找到可用的系统文件选择器。请启用/安装文件管理器后重试。",
+        )
+        if (!started) {
             pendingFileForSealingPickResult = null
-            result.error("ENVELOPE_SECURE_STORE", error.message, null)
         }
     }
+
+    private fun launchFilePicker(
+        requestCode: Int,
+        result: MethodChannel.Result,
+        mimeTypes: Array<String>?,
+        unavailableMessage: String,
+    ): Boolean {
+        var lastError: Throwable? = null
+        for (intent in filePickerIntents(mimeTypes)) {
+            try {
+                startActivityForResult(intent, requestCode)
+                return true
+            } catch (error: Throwable) {
+                lastError = error
+                Log.w("EnvelopeSecureStore", "No file picker can handle intent: $intent", error)
+            }
+        }
+        result.error(
+            "ENVELOPE_FILE_PICKER_UNAVAILABLE",
+            unavailableMessage,
+            lastError?.toString(),
+        )
+        return false
+    }
+
+    private fun filePickerIntents(mimeTypes: Array<String>?): List<Intent> =
+        listOf(
+            Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*"
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                if (!mimeTypes.isNullOrEmpty()) {
+                    putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes)
+                }
+            },
+            Intent(Intent.ACTION_GET_CONTENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*"
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                if (!mimeTypes.isNullOrEmpty()) {
+                    putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes)
+                }
+            },
+        )
 
     private fun handleOfflineEnvelopePickResult(resultCode: Int, data: Intent?) {
         val result = pendingOfflineEnvelopePickResult ?: return
@@ -759,7 +1006,7 @@ class MainActivity : FlutterFragmentActivity() {
         }
         val uri = data?.data
         if (uri == null) {
-            result.error("ENVELOPE_SECURE_STORE", "未选择离线信封文件。", null)
+            result.error("ENVELOPE_FILE_PICKER_EMPTY", "未选择离线信封文件。", null)
             return
         }
         try {
@@ -773,7 +1020,34 @@ class MainActivity : FlutterFragmentActivity() {
                 ),
             )
         } catch (error: Throwable) {
-            result.error("ENVELOPE_SECURE_STORE", error.message, null)
+            result.error("ENVELOPE_FILE_IO", error.message, null)
+        }
+    }
+
+    private fun handleLocalBackupPickResult(resultCode: Int, data: Intent?) {
+        val result = pendingLocalBackupPickResult ?: return
+        pendingLocalBackupPickResult = null
+        if (resultCode != Activity.RESULT_OK) {
+            result.success(null)
+            return
+        }
+        val uri = data?.data
+        if (uri == null) {
+            result.error("ENVELOPE_FILE_PICKER_EMPTY", "未选择本地备份文件。", null)
+            return
+        }
+        try {
+            persistReadPermission(data, uri)
+            result.success(
+                mapOf(
+                    "name" to displayNameForUri(uri),
+                    "mime" to (contentResolver.getType(uri) ?: "application/octet-stream"),
+                    "uri" to uri.toString(),
+                    "size" to sizeForUri(uri),
+                ),
+            )
+        } catch (error: Throwable) {
+            result.error("ENVELOPE_FILE_IO", error.message, null)
         }
     }
 
@@ -786,7 +1060,7 @@ class MainActivity : FlutterFragmentActivity() {
         }
         val uri = data?.data
         if (uri == null) {
-            result.error("ENVELOPE_SECURE_STORE", "未选择文件。", null)
+            result.error("ENVELOPE_FILE_PICKER_EMPTY", "未选择文件。", null)
             return
         }
         try {
@@ -800,7 +1074,7 @@ class MainActivity : FlutterFragmentActivity() {
                 ),
             )
         } catch (error: Throwable) {
-            result.error("ENVELOPE_SECURE_STORE", error.message, null)
+            result.error("ENVELOPE_FILE_IO", error.message, null)
         }
     }
 
@@ -843,7 +1117,7 @@ class MainActivity : FlutterFragmentActivity() {
                 result.success(if (total == length) buffer else buffer.copyOf(total))
             } ?: error("无法读取文件。")
         } catch (error: Throwable) {
-            result.error("ENVELOPE_SECURE_STORE", error.message, null)
+            result.error("ENVELOPE_FILE_IO", error.message, null)
         }
     }
 
@@ -1138,6 +1412,134 @@ class MainActivity : FlutterFragmentActivity() {
         } catch (error: Throwable) {
             result.error("ENVELOPE_SECURE_STORE", error.message, null)
         }
+    }
+
+    private fun pruneSavedFiles(arguments: Any?, result: MethodChannel.Result) {
+        val args = arguments as? Map<*, *> ?: error("pruneSavedFiles arguments are required")
+        val childDir = args["childDir"]?.toString() ?: "files"
+        val prefix = args["prefix"]?.toString()?.takeIf { it.isNotBlank() }
+            ?: error("prefix is required")
+        val keep = ((args["keep"] as? Number)?.toInt() ?: 1).coerceAtLeast(0)
+        try {
+            result.success(pruneSavedFilesUnder(childDir, prefix, keep))
+        } catch (error: Throwable) {
+            result.error("ENVELOPE_SECURE_STORE", error.message, null)
+        }
+    }
+
+    private data class SavedFileCandidate(
+        val uri: Uri?,
+        val file: File?,
+        val modifiedAt: Long,
+        val name: String,
+    )
+
+    private fun pruneSavedFilesUnder(childDir: String, prefix: String, keep: Int): Int {
+        val normalizedChildDir = sanitizePathSegment(childDir)
+        val normalizedPrefix = sanitizeFileName(prefix)
+        if (normalizedPrefix.isBlank()) {
+            return 0
+        }
+        val mediaStoreCandidates = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            listMediaStoreDownloadsUnder("Envelope/$normalizedChildDir", normalizedPrefix)
+        } else {
+            emptyList()
+        }
+        @Suppress("DEPRECATION")
+        val folder = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            "Envelope/$normalizedChildDir",
+        )
+        val fileCandidates = folder.listFiles()
+            ?.filter { it.isFile && it.name.startsWith(normalizedPrefix) }
+            ?.map {
+                SavedFileCandidate(
+                    uri = null,
+                    file = it,
+                    modifiedAt = it.lastModified(),
+                    name = it.name,
+                )
+            }
+            ?: emptyList()
+
+        val candidates = (mediaStoreCandidates + fileCandidates)
+            .sortedWith(
+                compareByDescending<SavedFileCandidate> { it.modifiedAt }
+                    .thenByDescending { it.name },
+            )
+        var deleted = 0
+        candidates.drop(keep).forEach { candidate ->
+            val uri = candidate.uri
+            val file = candidate.file
+            if (uri != null) {
+                if (contentResolver.delete(uri, null, null) > 0) {
+                    deleted += 1
+                }
+            } else if (file != null && (!file.exists() || file.delete())) {
+                deleted += 1
+            }
+        }
+        return deleted
+    }
+
+    private fun listMediaStoreDownloadsUnder(
+        relativeDir: String,
+        prefix: String,
+    ): List<SavedFileCandidate> {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            return emptyList()
+        }
+        val normalized = relativeDir.trim('/').replace('\\', '/')
+        val downloads = "${Environment.DIRECTORY_DOWNLOADS}/$normalized"
+        val legacyDownloads = "Downloads/$normalized"
+        val selection = "(" +
+            "${MediaStore.MediaColumns.RELATIVE_PATH} = ? OR " +
+            "${MediaStore.MediaColumns.RELATIVE_PATH} = ? OR " +
+            "${MediaStore.MediaColumns.RELATIVE_PATH} = ? OR " +
+            "${MediaStore.MediaColumns.RELATIVE_PATH} = ?" +
+            ") AND ${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?"
+        val selectionArgs = arrayOf(
+            downloads,
+            "$downloads/",
+            legacyDownloads,
+            "$legacyDownloads/",
+            "$prefix%",
+        )
+        val candidates = mutableListOf<SavedFileCandidate>()
+        contentResolver.query(
+            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+            arrayOf(
+                BaseColumns._ID,
+                MediaStore.MediaColumns.DISPLAY_NAME,
+                MediaStore.MediaColumns.DATE_MODIFIED,
+            ),
+            selection,
+            selectionArgs,
+            "${MediaStore.MediaColumns.DATE_MODIFIED} DESC",
+        )?.use { cursor ->
+            val idColumn = cursor.getColumnIndexOrThrow(BaseColumns._ID)
+            val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
+            val modifiedColumn =
+                cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_MODIFIED)
+            while (cursor.moveToNext()) {
+                val name = cursor.getString(nameColumn) ?: continue
+                if (!name.startsWith(prefix)) {
+                    continue
+                }
+                val id = cursor.getLong(idColumn)
+                val modifiedAtSeconds = cursor.getLong(modifiedColumn)
+                candidates += SavedFileCandidate(
+                    uri = ContentUris.withAppendedId(
+                        MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                        id,
+                    ),
+                    file = null,
+                    modifiedAt = modifiedAtSeconds * 1000L,
+                    name = name,
+                )
+            }
+        }
+        return candidates
     }
 
     private fun deleteResolvedSavedFile(rawUri: String?, rawPath: String?): Boolean {
@@ -1576,6 +1978,28 @@ class MainActivity : FlutterFragmentActivity() {
             contentResolver.takePersistableUriPermission(uri, readFlags)
         } catch (_: Throwable) {
             // Some providers grant temporary read access only. The immediate send path can still use it.
+        }
+    }
+
+    private fun persistTreePermission(data: Intent?, uri: Uri) {
+        val flags = data?.flags ?: return
+        val persistableFlags = flags and (
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        )
+        if (persistableFlags == 0) {
+            return
+        }
+        try {
+            contentResolver.takePersistableUriPermission(uri, persistableFlags)
+        } catch (error: Throwable) {
+            val readFlags = persistableFlags and Intent.FLAG_GRANT_READ_URI_PERMISSION
+            if (readFlags != 0) {
+                try {
+                    contentResolver.takePersistableUriPermission(uri, readFlags)
+                } catch (_: Throwable) {
+                    Log.w("EnvelopeSecureStore", "Persist folder tree permission failed: $uri", error)
+                }
+            }
         }
     }
 

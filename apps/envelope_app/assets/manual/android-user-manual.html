@@ -213,8 +213,8 @@
         <span>Envelope Android</span>
       </div>
       <h1>使用手册 / User Manual</h1>
-      <p class="lead">本手册对应当前 Android 客户端，说明如何安装 APK、创建或恢复身份、添加联系人、发送消息和文件、使用群组，以及通过密封 / 拆封文件完成离线转交。</p>
-      <p class="lead en">This manual applies to the current Android client. It covers APK installation, identity creation and recovery, contacts, messages and files, groups, and offline transfer through sealing / opening envelope files.</p>
+      <p class="lead">本手册对应当前 Android 客户端，说明如何安装 APK、创建身份、用恢复词和本地备份恢复使用现场、添加联系人、发送消息和文件、使用群组，以及通过密封 / 拆封文件完成离线转交。</p>
+      <p class="lead en">This manual applies to the current Android client. It covers APK installation, identity creation, recovery with a phrase and local backup, contacts, messages and files, groups, and offline transfer through sealing / opening envelope files.</p>
       <p class="meta">适用版本：Envelope Android 当前版本。不同手机系统的安装确认和文件授权界面可能略有差异。</p>
       <p class="meta">Version scope: current Envelope Android release. Installation confirmation and file permission screens may vary by Android device.</p>
     </div>
@@ -252,32 +252,33 @@
           <ol>
             <li>进入底部“设置”。<span class="en">Open the bottom Settings tab.</span></li>
             <li>在“我的身份”里填写显示名。<span class="en">Enter a display name under My Identity.</span></li>
-            <li>生成并抄写 BIP39 24 词恢复词。<span class="en">Generate and write down the BIP39 24-word recovery phrase.</span></li>
-            <li>点击“创建身份”。<span class="en">Tap Create Identity.</span></li>
+            <li>点击“创建身份”。App 会生成本机身份，并把 BIP39 24 词恢复词短暂显示在恢复词输入框里。<span class="en">Tap Create Identity. The app creates the local identity and briefly shows the BIP39 24-word recovery phrase in the recovery phrase field.</span></li>
+            <li>立即离线抄写恢复词；恢复词会在超时、切到后台或执行相关操作后清空。<span class="en">Write the phrase down offline immediately. The phrase is cleared after a timeout, when the app goes to background, or after related operations.</span></li>
           </ol>
         </div>
         <div class="card">
-          <h3>恢复身份 / Recover Identity</h3>
+          <h3>恢复身份和使用现场 / Restore Identity and Local State</h3>
           <ol>
-            <li>输入原来的 24 词恢复词。<span class="en">Enter the original 24-word recovery phrase.</span></li>
-            <li>填写显示名。<span class="en">Enter a display name.</span></li>
-            <li>点击“从恢复词替换本机身份”。<span class="en">Tap Replace local identity from recovery phrase.</span></li>
-            <li>确认替换后，App 会清空当前本机身份和本地聊天现场，再写入恢复出的身份。<span class="en">After confirmation, the app clears the current local identity and local chat state, then writes the recovered identity.</span></li>
+            <li>在“我的身份”里的恢复词输入框输入原来的 24 词恢复词。<span class="en">Enter the original 24-word recovery phrase in the recovery phrase field under My Identity.</span></li>
+            <li>点击恢复词输入框下方的“用恢复词从本地备份恢复”。<span class="en">Tap Restore from phrase and local backup below the recovery phrase field.</span></li>
+            <li>选择本地备份文件。当前备份文件通常位于 <code>Download/Envelope/backups</code>。<span class="en">Choose the local backup file. Current backup files are usually under <code>Download/Envelope/backups</code>.</span></li>
+            <li>确认后，App 会用恢复词恢复身份私钥，再从备份中恢复联系人、群组、同步入口和自动备份策略。<span class="en">After confirmation, the app recovers the identity private keys from the phrase, then restores contacts, groups, sync entry, and auto-backup settings from the backup.</span></li>
           </ol>
         </div>
       </div>
       <div class="notice">
-        24 词只能恢复同一个加密身份。联系人、群组、同步服务入口和本机使用现场不会只靠 24 词自动恢复；这些内容需要使用“本地备份”恢复。
-        <span class="en">The 24-word phrase only recovers the cryptographic identity. Contacts, groups, sync service entry, and local usage state are not restored by the phrase alone; use Local Backup for those.</span>
+        面向真实用户的恢复流程是“恢复词 + 本地备份文件”一起完成。24 词用于恢复同一个加密身份；联系人、群组、同步服务入口和自动备份策略来自本地备份。
+        <span class="en">The real-user recovery flow is recovery phrase plus local backup file. The 24-word phrase recovers the same cryptographic identity; contacts, groups, sync service entry, and auto-backup settings come from the local backup.</span>
       </div>
       <h3>本地备份 / Local Backup</h3>
-      <p>设置页的“本地备份”会用 24 词加密导出显示名、身份 key id、同步服务入口、联系人、群组和群成员。本地备份当前不包含聊天记录，也不包含 received / sealed 文件缓存。</p>
-      <p class="en">Local Backup in Settings encrypts and exports display name, identity key id, sync service entry, contacts, groups, and group members with the 24-word phrase. It currently does not include chat history or received / sealed file cache.</p>
+      <p>设置页的“本地备份”位于“我的身份”之后、“安全”之前。新备份使用当前本机身份给自己加密，会导出显示名、身份 key id、同步服务入口、联系人、群组、群成员和自动备份策略；不会保存恢复词。本地备份当前不包含聊天记录，也不包含 received / sealed 文件缓存。</p>
+      <p class="en">Local Backup in Settings appears after My Identity and before Security. New backups are self-encrypted with the current local identity and export display name, identity key id, sync service entry, contacts, groups, group members, and auto-backup settings; the recovery phrase is not stored. Local backups currently do not include chat history or received / sealed file cache.</p>
       <ol>
-        <li>导出前先在恢复词输入框里输入当前身份的 24 词。<span class="en">Before export, enter the current identity's 24-word phrase.</span></li>
-        <li>点击“导出本地备份”，备份文件保存到 <code>Download/Envelope/backups</code>。<span class="en">Tap Export Local Backup. The backup is saved to <code>Download/Envelope/backups</code>.</span></li>
-        <li>恢复时选择备份文件并输入匹配的 24 词。<span class="en">To restore, choose the backup file and enter the matching 24-word phrase.</span></li>
-        <li>恢复会替换当前本机身份、联系人、群组和同步服务入口。<span class="en">Restore replaces the current local identity, contacts, groups, and sync service entry.</span></li>
+        <li>点击“导出本地备份”，备份文件保存到 <code>Download/Envelope/backups</code>。导出不需要再次输入恢复词。<span class="en">Tap Export Local Backup. The backup is saved to <code>Download/Envelope/backups</code>. Export does not require entering the recovery phrase again.</span></li>
+        <li>自动备份可以设置为关闭、每 6 小时、每 12 小时、每天或每 72 小时检查一次，并可保留最近 3 / 7 / 14 / 30 个备份。<span class="en">Auto backup can be set to off, every 6 hours, every 12 hours, daily, or every 72 hours, and can keep the latest 3 / 7 / 14 / 30 backups.</span></li>
+        <li>自动备份在 App 打开或回到前台时检查是否到期；到期后写入 <code>Download/Envelope/backups</code>。<span class="en">Auto backup checks whether a backup is due when the app is open or resumes to foreground; due backups are written to <code>Download/Envelope/backups</code>.</span></li>
+        <li>恢复时先输入匹配的 24 词，再点击“用恢复词从本地备份恢复”并选择备份文件。<span class="en">To restore, enter the matching 24-word phrase first, then tap Restore from phrase and local backup and choose the backup file.</span></li>
+        <li>新版 v2 备份和旧版 24 词加密 v1 备份都可以导入。<span class="en">Both current v2 backups and legacy v1 backups encrypted with the 24-word phrase can be imported.</span></li>
       </ol>
     </section>
 
@@ -410,9 +411,9 @@
 
     <section id="faq">
       <h2>9. 常见问题 / FAQ</h2>
-      <h3>为什么 24 词恢复后没有联系人？ / Why are contacts missing after 24-word recovery?</h3>
-      <p>24 词只恢复身份密钥。联系人、群组和同步服务入口属于本机使用现场，需要用本地备份恢复。</p>
-      <p class="en">The 24-word phrase only recovers identity keys. Contacts, groups, and sync service entry belong to local usage state and require Local Backup restore.</p>
+      <h3>为什么恢复需要本地备份文件？ / Why does recovery need a local backup file?</h3>
+      <p>24 词只恢复身份密钥。面向真实用户的恢复需要同时恢复联系人、群组、同步入口和自动备份策略，所以应使用“恢复词 + 本地备份文件”的完整流程。</p>
+      <p class="en">The 24-word phrase only recovers identity keys. Real-user recovery also needs contacts, groups, sync entry, and auto-backup settings, so use the complete recovery phrase plus local backup file flow.</p>
       <h3>为什么群邀请点了接受后还要等待？ / Why is there a wait after accepting a group invitation?</h3>
       <p>接受邀请需要写入本机状态，并把状态同步给相关成员。共识群还需要活跃成员背书达到阈值后才会变为可收发消息的活跃成员。</p>
       <p class="en">Accepting an invitation writes local state and syncs it to related members. Consensus groups also require active-member endorsements to reach the threshold before the candidate becomes an active member.</p>

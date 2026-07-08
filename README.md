@@ -17,6 +17,8 @@ Status: MVP / active development. The Android client is the primary product surf
 - 一对一端到端加密文本和文件消息。 / One-to-one end-to-end encrypted text and file messages.
 - Android Keystore 保护本地数据库密钥。 / Android Keystore protects the local database key.
 - SQLCipher 本地聊天数据库。 / Local SQLCipher chat database.
+- 恢复词 + 本地备份文件的一次性恢复流程，可恢复身份、联系人、群组和本机设置。 / One-step recovery with recovery phrase plus local backup file, restoring identity, contacts, groups, and local settings.
+- 本机身份自加密的本地备份，以及可配置的自动备份策略。 / Self-encrypted local backups and configurable auto-backup policy.
 - 二维码联系人交换和 fingerprint 确认。 / QR contact exchange with fingerprint confirmation.
 - 投递兜底链路：P2P direct -> server route retry -> server mailbox。 / Delivery fallback path: P2P direct -> server route retry -> server mailbox.
 - 基于签名 `NodeSetManifest` 的多入口服务节点池。 / Multi-entry service node pool based on signed `NodeSetManifest`.
@@ -90,9 +92,23 @@ cargo run -p envelope-server -- --bind 127.0.0.1:19093 --database target/envelop
 .\scripts\build-android-apk.ps1 -Mode release
 ```
 
+构建带 ADB bridge 的测试 release APK / Build a test release APK with ADB bridge:
+
+```powershell
+.\scripts\build-android-apk.ps1 -Mode release -EnableAdbBridge
+```
+
+正式 GitHub Release 发布包不启用 ADB bridge；USB 测试和自动化验证包可以启用。
+
+Official GitHub Release packages do not enable ADB bridge; USB test and automation verification builds may enable it.
+
 Android 客户端首次使用前，在设置页的“消息同步 / 中继矩阵入口”中填写同步服务域名或 IP。
 
 Before first use, configure the sync service domain or IP in the Android client's Settings -> Message Sync / Relay Matrix Entry.
+
+恢复新设备时，在“设置 / 我的身份”输入 BIP39 24 词恢复词，然后点击“用恢复词从本地备份恢复”并选择本地备份文件。新备份位于 `Download/Envelope/backups`，由本机身份自加密；自动备份可在设置页配置间隔和保留数量。
+
+To restore a new device, enter the BIP39 24-word recovery phrase in Settings -> My Identity, then tap Restore from phrase and local backup and choose the backup file. New backups are stored under `Download/Envelope/backups` and self-encrypted with the local identity; the auto-backup interval and retention count are configurable in Settings.
 
 运行 Android 检查 / Run Android checks:
 

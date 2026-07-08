@@ -38,6 +38,20 @@ void main() {
     expect(result.folderPath, '/storage/emulated/0/Download/Envelope/sealed');
   });
 
+  test('AndroidOpenLocationResult parses unavailable result', () {
+    final result = AndroidOpenLocationResult.fromValue({
+      'status': 'unavailable',
+      'method': 'none',
+      'folderPath': '/storage/emulated/0/Download/Envelope/received',
+    });
+
+    expect(result.unavailable, isTrue);
+    expect(result.openedDirectly, isFalse);
+    expect(result.openedPickerAtFolder, isFalse);
+    expect(result.method, 'none');
+    expect(result.folderPath, '/storage/emulated/0/Download/Envelope/received');
+  });
+
   test('AndroidSavedFilePreview parses preview bytes', () {
     final preview = AndroidSavedFilePreview.fromMap({
       'bytes': Uint8List.fromList([1, 2, 3]),
@@ -60,5 +74,22 @@ void main() {
 
     expect(result.receivedDeleted, 2);
     expect(result.sealedDeleted, 3);
+  });
+
+  test('AndroidAutoBackupSettings parses defaults and saved values', () {
+    final defaults = AndroidAutoBackupSettings.fromMap({});
+    expect(defaults.intervalHours, 24);
+    expect(defaults.retentionCount, 7);
+    expect(defaults.lastBackupAtUnixMs, isNull);
+
+    final saved = AndroidAutoBackupSettings.fromMap({
+      'intervalHours': 6,
+      'retentionCount': 14,
+      'lastBackupAtUnixMs': 1783500000000,
+    });
+    expect(saved.enabled, isTrue);
+    expect(saved.intervalHours, 6);
+    expect(saved.retentionCount, 14);
+    expect(saved.lastBackupAtUnixMs, 1783500000000);
   });
 }
