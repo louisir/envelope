@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 
 class AndroidSecureIdentityStore {
   static const MethodChannel _channel = MethodChannel(
-    'com.westwardsoft.envelope/secure_store',
+    'com.iamlouis.envelope/secure_store',
   );
 
   bool get isSupported => Platform.isAndroid;

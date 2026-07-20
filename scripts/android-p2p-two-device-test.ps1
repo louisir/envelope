@@ -3,7 +3,7 @@ param(
     [string]$DeviceA,
     [Parameter(Mandatory = $true)]
     [string]$DeviceB,
-    [string]$PackageName = "com.westwardsoft.envelope",
+    [string]$PackageName = "com.iamlouis.envelope",
     [int]$CommandTimeoutSeconds = 45,
     [switch]$ResetIdentities,
     [switch]$ClearChatStores

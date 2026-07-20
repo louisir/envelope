@@ -82,10 +82,10 @@ if (-not [string]::IsNullOrWhiteSpace($BaseUrl)) {
 }
 
 $signed = [ordered]@{
-    schema = "com.westwardsoft.envelope.update.v1"
+    schema = "com.iamlouis.envelope.update.v1"
     product = "envelope"
     platform = "android"
-    package = "com.westwardsoft.envelope"
+    package = "com.iamlouis.envelope"
     channel = $Channel
     app_version = $AppVersion
     android_version_code = $VersionCode

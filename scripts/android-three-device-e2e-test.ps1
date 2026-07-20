@@ -8,7 +8,7 @@ param(
     [Parameter(Mandatory = $true)]
     [ValidateNotNullOrEmpty()]
     [string]$DeviceX,
-    [string]$PackageName = "com.westwardsoft.envelope",
+    [string]$PackageName = "com.iamlouis.envelope",
     [string]$ServerUrl = "https://node-a.example.com",
     [int]$CommandTimeoutSeconds = 60,
     [switch]$ResetIdentities,

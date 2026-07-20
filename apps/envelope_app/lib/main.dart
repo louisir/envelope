@@ -192,7 +192,7 @@ class EnvelopeHomePage extends StatefulWidget {
 class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     with WidgetsBindingObserver {
   static const MethodChannel _adbBridgeChannel = MethodChannel(
-    'com.westwardsoft.envelope/adb_bridge',
+    'com.iamlouis.envelope/adb_bridge',
   );
   static const int _androidMessagesPageSize = 50;
   static const Duration _androidMailboxForegroundPullInterval = Duration(

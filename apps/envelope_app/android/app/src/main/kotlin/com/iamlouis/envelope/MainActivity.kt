@@ -1,4 +1,4 @@
-package com.westwardsoft.envelope
+package com.iamlouis.envelope
 
 import android.app.Activity
 import android.content.ActivityNotFoundException
@@ -44,9 +44,9 @@ import javax.crypto.spec.IvParameterSpec
 import org.json.JSONObject
 
 class MainActivity : FlutterFragmentActivity() {
-    private val channelName = "com.westwardsoft.envelope/secure_store"
-    private val adbBridgeChannelName = "com.westwardsoft.envelope/adb_bridge"
-    private val adbBridgeAction = "com.westwardsoft.envelope.ADB"
+    private val channelName = "com.iamlouis.envelope/secure_store"
+    private val adbBridgeChannelName = "com.iamlouis.envelope/adb_bridge"
+    private val adbBridgeAction = "com.iamlouis.envelope.ADB"
     private val prefsName = "envelope_secure_store"
     private val identityKey = "identity_v1"
     private val chatStoreKey = "chat_store_v1"

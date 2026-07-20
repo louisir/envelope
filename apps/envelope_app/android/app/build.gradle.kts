@@ -32,7 +32,7 @@ val dartDefines = (project.findProperty("dart-defines") as? String)
 val adbBridgeEnabled = "ENVELOPE_ADB_BRIDGE=true" in dartDefines
 
 android {
-    namespace = "com.westwardsoft.envelope"
+    namespace = "com.iamlouis.envelope"
     compileSdk = flutter.compileSdkVersion
     buildToolsVersion = "36.1.0"
     ndkVersion = flutter.ndkVersion
@@ -47,7 +47,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.westwardsoft.envelope"
+        applicationId = "com.iamlouis.envelope"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 24
