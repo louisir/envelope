@@ -64,6 +64,46 @@ The Android client is the primary product surface. The desktop app remains a dev
 - 通过 24 词自动恢复联系人、群组或聊天记录。 / Automatic contact, group, or chat-history recovery from the 24-word phrase alone.
 - 独立安全审计结论。 / Independent security audit conclusions.
 
+### 目标平台与单活跃终端要求 / Target Platforms and Single-Active-Endpoint Requirement
+
+本节描述产品目标，不表示这些平台能力已经全部实现。实现状态仍以上方“已实现”和项目 README 为准。
+
+This section defines the product target; it does not claim that every platform capability is already implemented. Actual implementation status remains defined by the Implemented section above and the project README.
+
+第一阶段的正式平台目标：
+
+First-phase supported-platform target:
+
+- Android 正式版。 / Production Android client.
+- Windows 正式版。 / Production Windows client.
+- Linux CLI 正式版；必须提供预编译发布包，不要求用户安装 Rust、Cargo 或自行编译。 / Production Linux CLI, distributed as prebuilt releases without requiring users to install Rust, Cargo, or compile from source.
+- iOS 暂不支持；在客户端入口、邀请页和文档中明确说明，不展示无法完成的安装或打开流程。 / iOS is not currently supported; client entry points, invitation pages, and documentation must state this clearly and must not present an installation or open flow that cannot be completed.
+
+第一阶段采用“多平台可选、单设备激活”模型：
+
+The first phase uses a multi-platform-choice, single-active-device model:
+
+> 一个 Envelope 身份目前只能绑定一个活跃消息终端。你可以选择 Android、Windows 或 Linux，但不需要、也不应让同一身份在多个终端同时处于活跃消息状态。
+
+> An Envelope identity can currently be bound to only one active messaging endpoint. A user may choose Android, Windows, or Linux, but the same identity is neither required nor expected to remain active on multiple endpoints at the same time.
+
+该模型的产品和实现要求：
+
+Product and implementation requirements for this model:
+
+- 身份创建或恢复前必须先明确选择当前活跃终端；平台选择是客户端入口流程的一部分。 / The active endpoint must be selected before identity creation or recovery; platform choice is part of client onboarding.
+- Android、Windows 和 Linux CLI 使用相同的身份、Contact、IntroBundle 和 opaque envelope 协议格式，保证跨平台互操作。 / Android, Windows, and Linux CLI use the same identity, Contact, IntroBundle, and opaque-envelope protocol formats for cross-platform interoperability.
+- 第一阶段的“多平台支持”不等于多 active messaging device、聊天记录实时同步或多端同时收信。 / First-phase multi-platform support does not imply multiple active messaging devices, real-time chat-history sync, or simultaneous delivery to multiple endpoints.
+- 切换终端必须走明确的迁移或重新激活流程；系统不得通过静默复制裸私钥来制造多端同时在线。 / Endpoint changes require an explicit migration or reactivation flow; the system must not create simultaneous multi-device operation by silently copying raw private keys.
+- 新终端激活后，旧终端不得继续发布新的 route 或作为当前消息投递目标；旧终端本地数据是否删除由明确的迁移和撤销流程决定。 / After a new endpoint is activated, the old endpoint must not continue publishing new routes or remain the current delivery target; deletion of its local data is governed by an explicit migration and revocation flow.
+- 当前不承诺聊天记录和文件缓存随身份自动迁移；客户端必须在切换前清楚说明哪些状态能够恢复、哪些状态只存在于旧设备。 / Automatic migration of chat history and file caches is not promised; before switching, clients must clearly state which state is recoverable and which remains only on the old device.
+- Windows 正式版不得继续以裸 JSON 私钥和开发 CLI 代理作为生产存储路径；必须使用受操作系统保护的密钥或加密存储。 / The production Windows client must not retain raw JSON private keys or a development CLI proxy as its production storage path; it must use OS-protected key material or encrypted storage.
+- Linux CLI 必须覆盖身份创建/恢复、联系人导入与指纹核对、离线信封导入、消息收发、备份以及可脚本化的错误码，并安全保存或加密私有身份。 / The Linux CLI must cover identity creation/recovery, contact import and fingerprint verification, offline-envelope import, message send/receive, backup, scriptable exit codes, and protected or encrypted private-identity storage.
+
+真正的多设备同时在线属于后续阶段。协议和数据模型应保留 `device_id`、设备授权、设备列表版本和撤销状态，以便未来演进为“稳定根身份授权独立设备密钥”的模型；在该模型接入完整消息链路之前，不得把现有设备结构描述为已经完成的多设备支持。
+
+True simultaneous multi-device operation belongs to a later phase. Protocol and data models should retain `device_id`, device authorization, device-list versioning, and revocation state so the system can evolve toward a stable root identity authorizing independent device keys. Existing device structures must not be described as completed multi-device support until that model is integrated into the full messaging path.
+
 ## 3. Android 客户端结构 / Android Client Structure
 
 Android 客户端由 Flutter UI、Rust FFI、Android 原生 MethodChannel 和本地加密数据库组成。

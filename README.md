@@ -28,6 +28,24 @@ Status: MVP / active development. The Android client is the primary product surf
 - 客户端诊断日志和 replay 检测。 / Client diagnostic logs and replay detection.
 - Android release APK 签名和 update manifest 生成。 / Android release APK signing and update manifest generation.
 
+## 密码学概览 / Cryptography Overview
+
+以下内容描述当前协议 v1 的实际实现，不代表独立安全审计结论。协议实现以 [`envelope-core`](crates/envelope-core/src/lib.rs) 源码为准。
+
+The following describes the current protocol v1 implementation and is not an independent security audit. The [`envelope-core`](crates/envelope-core/src/lib.rs) source is authoritative.
+
+- 身份与认证：使用 Ed25519 身份签名密钥和 X25519 长期密钥协商密钥；联系人 `key_id` 取两把公钥带上下文 SHA-256 摘要的前 16 字节。 / Identity and authentication use an Ed25519 identity signing key and a long-term X25519 key-agreement key. A contact `key_id` is the first 16 bytes of a context-bound SHA-256 digest of both public keys.
+- 消息与文件：每个 opaque envelope 生成新的临时 X25519 密钥，与接收者长期 X25519 公钥协商共享秘密，再通过 HKDF-SHA-256 派生 256 位密钥，并使用 XChaCha20-Poly1305 进行带认证加密；信封内部同时包含发送者的 Ed25519 签名。 / Each opaque message or file envelope generates a fresh ephemeral X25519 key, agrees a shared secret with the recipient's long-term X25519 public key, derives a 256-bit key with HKDF-SHA-256, and uses XChaCha20-Poly1305 authenticated encryption. The encrypted envelope body also carries the sender's Ed25519 signature.
+- 身份恢复：由操作系统安全随机数生成 BIP39 英文 24 词恢复词；BIP39 seed 通过 HKDF-SHA-256 和不同用途的 context 分别派生签名、密钥协商及备份密钥。 / Identity recovery uses a 24-word English BIP39 phrase generated from operating-system secure randomness. The BIP39 seed is separated by HKDF-SHA-256 contexts into signing, key-agreement, and backup keys.
+- 本地备份：备份密钥由恢复词派生，使用 XChaCha20-Poly1305、随机 24 字节 nonce 和固定 associated data 加密。 / Local backups derive their key from the recovery phrase and use XChaCha20-Poly1305 with a random 24-byte nonce and fixed associated data.
+- Android 本地存储：聊天数据库使用 SQLCipher；身份记录和随机生成的 32 字节数据库口令由 Android Keystore 中的 AES 密钥保护。首选 AES-256-GCM，兼容回退路径包括 AES-128-GCM 和 AES-128-CBC-PKCS7；CBC 回退路径不是 AEAD 模式。 / Android local storage uses SQLCipher for chat data. Identity records and the randomly generated 32-byte database passphrase are protected by an AES key in Android Keystore. AES-256-GCM is preferred, with AES-128-GCM and AES-128-CBC-PKCS7 compatibility fallbacks; the CBC fallback is not an AEAD mode.
+- 群消息不使用共享群密钥；当前实现对每个接收成员分别使用上述一对一 envelope 加密。 / Group messages do not use a shared group key; the current implementation encrypts a separate one-to-one envelope for each recipient.
+- 基础设施元数据：节点清单和节点 challenge 使用 Ed25519 签名；Android update manifest 使用 RSA-PSS-SHA256 签名并包含 APK SHA-256。 / Infrastructure metadata uses Ed25519 signatures for node manifests and node challenges. Android update manifests use RSA-PSS-SHA256 and include the APK SHA-256 digest.
+
+当前协议不是 Signal Protocol、Double Ratchet 或 MLS 的实现，也不宣称具备前向保密或入侵后安全性。每封信封虽然使用新的发送端临时 X25519 密钥，但接收端使用长期 X25519 密钥；该长期私钥泄露可能使攻击者解密此前截获的信封。项目仍处于 MVP 阶段，尚未经过独立安全审计。
+
+The current protocol is not an implementation of Signal Protocol, Double Ratchet, or MLS, and it does not claim forward secrecy or post-compromise security. Although every envelope uses a fresh sender-side ephemeral X25519 key, the recipient uses a long-term X25519 key; compromise of that private key may allow previously captured envelopes to be decrypted. The project remains an unaudited MVP.
+
 ## 当前边界 / Current Boundaries
 
 - mailbox 层不是跨节点强一致多副本存储。 / The mailbox layer is not strongly consistent replicated storage across nodes.
