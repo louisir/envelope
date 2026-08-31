@@ -1,0 +1,224 @@
+<UserControl x:Class="Envelope.Windows.Views.AboutPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             d:DesignHeight="760"
+             d:DesignWidth="1040"
+             mc:Ignorable="d">
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+        <Grid MaxWidth="1120" Margin="38,32,38,44" HorizontalAlignment="Center">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <StackPanel>
+                <TextBlock Style="{StaticResource Text.PageTitle}" Text="{DynamicResource About.Title}" />
+                <TextBlock Style="{StaticResource Text.PageSubtitle}" Text="{DynamicResource About.Subtitle}" />
+            </StackPanel>
+
+            <Border Grid.Row="1"
+                    Margin="0,26,0,0"
+                    Padding="34"
+                    Background="{DynamicResource Brush.Sidebar}"
+                    CornerRadius="18">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="250" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel MaxWidth="650" HorizontalAlignment="Left" VerticalAlignment="Center">
+                        <Border Padding="11,5"
+                                HorizontalAlignment="Left"
+                                Background="{DynamicResource Brush.SidebarSelected}"
+                                CornerRadius="13">
+                            <TextBlock FontSize="11"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource Brush.SidebarText}"
+                                       Text="{DynamicResource About.SecurityBadge}" />
+                        </Border>
+                        <TextBlock Margin="0,19,0,0"
+                                   FontSize="29"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource Brush.SidebarText}"
+                                   Text="{DynamicResource About.HeroTitle}"
+                                   TextWrapping="Wrap" />
+                        <TextBlock Margin="0,14,0,0"
+                                   FontSize="14"
+                                   Foreground="{DynamicResource Brush.SidebarMuted}"
+                                   LineHeight="22"
+                                   Text="{DynamicResource About.HeroText}"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <Grid Grid.Column="1" Margin="36,0,4,0">
+                        <Ellipse Width="190" Height="190" Fill="{DynamicResource Brush.SidebarSelected}" />
+                        <Ellipse Width="142" Height="142" Fill="{DynamicResource Brush.Accent}" Opacity="0.95" />
+                        <Path Width="82"
+                              Height="60"
+                              Data="M 2,4 L 41,33 L 80,4 M 4,6 L 4,56 L 78,56 L 78,6"
+                              Stretch="Fill"
+                              Stroke="{DynamicResource Brush.AccentText}"
+                              StrokeEndLineCap="Round"
+                              StrokeStartLineCap="Round"
+                              StrokeThickness="3" />
+                        <Border Width="29"
+                                Height="29"
+                                Margin="0,0,44,44"
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Bottom"
+                                Background="{DynamicResource Brush.Sidebar}"
+                                BorderBrush="{DynamicResource Brush.AccentText}"
+                                BorderThickness="2"
+                                CornerRadius="15">
+                            <TextBlock HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       FontFamily="Segoe Fluent Icons"
+                                       FontSize="12"
+                                       Foreground="{DynamicResource Brush.AccentText}"
+                                       Text="&#xE72E;" />
+                        </Border>
+                    </Grid>
+                </Grid>
+            </Border>
+
+            <Grid Grid.Row="2" Margin="0,20,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="20" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource Text.SectionTitle}" Text="{DynamicResource About.HelpTitle}" />
+                        <TextBlock Margin="0,9,0,17"
+                                   Foreground="{DynamicResource Brush.TextMuted}"
+                                   LineHeight="20"
+                                   Text="{DynamicResource About.HelpText}"
+                                   TextWrapping="Wrap" />
+                        <Button HorizontalAlignment="Left" Command="{Binding OpenManualCommand}" Style="{StaticResource Button.Primary}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Margin="0,0,8,0" FontFamily="Segoe Fluent Icons" Text="&#xE82D;" />
+                                <TextBlock Text="{DynamicResource About.OpenManual}" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Column="2" Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource Text.SectionTitle}" Text="{DynamicResource About.ProjectTitle}" />
+                        <Button Margin="0,13,0,8"
+                                HorizontalContentAlignment="Left"
+                                Command="{Binding OpenSourceCommand}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Margin="0,0,9,0" FontFamily="Segoe Fluent Icons" Text="&#xE943;" />
+                                <TextBlock Text="{DynamicResource About.Source}" />
+                            </StackPanel>
+                        </Button>
+                        <Button HorizontalContentAlignment="Left" Command="{Binding OpenLicenseCommand}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Margin="0,0,9,0" FontFamily="Segoe Fluent Icons" Text="&#xE8A5;" />
+                                <TextBlock Text="{DynamicResource About.License}" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <Grid Grid.Row="3" Margin="0,20,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="2*" />
+                    <ColumnDefinition Width="20" />
+                    <ColumnDefinition Width="3*" />
+                </Grid.ColumnDefinitions>
+                <Border Style="{StaticResource Card.Quiet}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource Text.SectionTitle}" Text="{DynamicResource About.Version}" />
+                        <Grid Margin="0,15,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource Text.Caption}" Text="{DynamicResource About.Version}" />
+                                <TextBlock Margin="0,4,0,0" FontSize="16" FontWeight="SemiBold" Text="{Binding Version}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Style="{StaticResource Text.Caption}" Text="{DynamicResource About.Build}" />
+                                <TextBlock Margin="0,4,0,0" FontSize="16" FontWeight="SemiBold" Text="{Binding Build}" />
+                            </StackPanel>
+                        </Grid>
+                        <TextBlock Margin="0,18,0,0" Style="{StaticResource Text.Caption}" Text="{DynamicResource About.Platform}" />
+                        <TextBlock Margin="0,4,0,0" Text="{DynamicResource About.PlatformValue}" />
+                        <TextBlock Margin="0,18,0,0" Style="{StaticResource Text.Caption}" Text="{DynamicResource About.Signing}" />
+                        <TextBlock Margin="0,4,0,0"
+                                   FontFamily="Consolas"
+                                   FontSize="11"
+                                   Text="{Binding SigningFingerprint}"
+                                   TextWrapping="Wrap">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasSigningFingerprint}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock Margin="0,4,0,0"
+                                   Foreground="{DynamicResource Brush.TextMuted}"
+                                   Text="{DynamicResource About.SigningPending}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasSigningFingerprint}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Column="2" Style="{StaticResource Card.Quiet}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource Text.SectionTitle}" Text="{DynamicResource About.PrincipleTitle}" />
+                        <Grid Margin="0,15,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="26" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock FontFamily="Segoe Fluent Icons" Foreground="{DynamicResource Brush.Success}" Text="&#xE73E;" />
+                            <TextBlock Grid.Column="1" Text="{DynamicResource About.Principle1}" TextWrapping="Wrap" />
+                        </Grid>
+                        <Grid Margin="0,13,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="26" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock FontFamily="Segoe Fluent Icons" Foreground="{DynamicResource Brush.Success}" Text="&#xE73E;" />
+                            <TextBlock Grid.Column="1" Text="{DynamicResource About.Principle2}" TextWrapping="Wrap" />
+                        </Grid>
+                        <Grid Margin="0,13,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="26" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock FontFamily="Segoe Fluent Icons" Foreground="{DynamicResource Brush.Success}" Text="&#xE73E;" />
+                            <TextBlock Grid.Column="1" Text="{DynamicResource About.Principle3}" TextWrapping="Wrap" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Grid>
+    </ScrollViewer>
+</UserControl>

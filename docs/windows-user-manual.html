@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Envelope Windows 用户手册</title>
+  <style>
+    :root{color-scheme:light;--ink:#15201c;--muted:#5d6b65;--line:#dce5e0;--paper:#fffdf9;--card:#fff;--brand:#d85f21;--soft:#fff0e5;--ok:#196b48;--warn:#8b4e00}
+    *{box-sizing:border-box}body{margin:0;background:linear-gradient(135deg,#f7f1e7,#eef6f1);color:var(--ink);font:16px/1.7 "Segoe UI","Microsoft YaHei",sans-serif}
+    main{max-width:980px;margin:36px auto;padding:0 22px 64px}.hero,.card{background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:0 12px 36px #24342d12}
+    .hero{padding:36px;background:linear-gradient(135deg,#fff7ef,#fff)}.eyebrow{color:var(--brand);font-weight:700;letter-spacing:.08em;text-transform:uppercase}h1{font-size:40px;line-height:1.15;margin:.2em 0}h2{font-size:25px;margin:0 0 12px}h3{font-size:18px;margin:24px 0 6px}.lead{font-size:18px;color:var(--muted);max-width:760px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin:18px 0}.card{padding:24px;margin-top:18px}.toc a{display:block;color:var(--ink);padding:6px 0;text-decoration:none}.toc a:hover{color:var(--brand)}code{background:#f2f5f3;border-radius:6px;padding:2px 6px;font-family:Consolas,monospace}.path{overflow-wrap:anywhere}.notice{border-left:4px solid var(--brand);background:var(--soft);padding:12px 16px;border-radius:8px;margin:14px 0}.safe{border-left-color:var(--ok);background:#ebf7f1}.warn{border-left-color:var(--warn);background:#fff4df}ol,ul{padding-left:24px}.steps li{margin:8px 0}table{width:100%;border-collapse:collapse}th,td{text-align:left;vertical-align:top;padding:10px;border-bottom:1px solid var(--line)}th{color:var(--muted)}footer{color:var(--muted);text-align:center;margin-top:28px;font-size:14px}@media(max-width:620px){h1{font-size:31px}.hero,.card{border-radius:13px;padding:20px}main{margin-top:16px}}
+  </style>
+</head>
+<body><main>
+  <section class="hero">
+    <div class="eyebrow">Envelope · Windows WPF</div>
+    <h1>Windows 用户手册</h1>
+    <p class="lead">Envelope 在本机完成身份派生、签名、加密、解密和状态保存。服务器、网盘、邮件和 U 盘只搬运 opaque 密文，不能读取消息正文或文件内容。</p>
+    <div class="notice warn"><strong>单活跃终端：</strong>一个 Envelope 身份当前只能选择一个活跃消息终端。把身份恢复到 Windows 是显式迁移，不是 Android 与 Windows 同时在线或聊天记录同步。</div>
+  </section>
+
+  <section class="card toc"><h2>目录</h2><div class="grid">
+    <div><a href="#start">1. 首次启动与身份</a><a href="#contacts">2. 联系人与验证</a><a href="#chat">3. 消息和文件</a><a href="#groups">4. 群组</a></div>
+    <div><a href="#offline">5. 密封与拆封</a><a href="#sync">6. 消息同步</a><a href="#backup">7. 备份与迁移</a><a href="#storage">8. 存储、安全与诊断</a></div>
+  </div></section>
+
+  <section id="start" class="card"><h2>1. 首次启动与身份</h2>
+    <p>进入“设置”页，在创建或恢复身份前确认这台 Windows 电脑将成为当前活跃消息终端。</p>
+    <h3>创建身份</h3><ol class="steps">
+      <li>填写显示名，选择“创建身份”。</li><li>程序调用与 Android 相同的 Rust core 生成 BIP39 24 词恢复词和长期身份。</li>
+      <li>离线抄写恢复词并核对顺序。显示窗口会在 2 分钟后自动关闭；关闭时程序会清空仍由它写入的剪贴板内容。</li><li>不要截图、发邮件、上传网盘或粘贴到聊天工具。</li>
+    </ol>
+    <h3>恢复身份</h3><ol class="steps"><li>输入完整的 24 词。</li><li>选择“恢复身份”，阅读替换警告并确认。</li><li>同一恢复词会恢复相同 Key ID；显示名可以重新填写。</li></ol>
+    <div class="notice"><strong>恢复词不包含使用现场：</strong>联系人、群组、聊天记录、文件缓存和同步服务地址不会只靠 24 词自动回来。联系人和群组需要本地加密备份。</div>
+  </section>
+
+  <section id="contacts" class="card"><h2>2. 联系人与验证</h2>
+    <p>Windows 端使用与 Android 互通的签名 Contact / IntroBundle。它会生成可由 Android 相机直接扫描的二维码，也能从 PNG、JPEG、BMP、GIF 或 TIFF 截图读取二维码；无摄像头依赖。</p>
+    <ol class="steps"><li>选择“出示二维码”，让另一端扫描短期 IntroBundle；配置同步服务后，二维码会包含短期双向互加 session。</li><li>在 Windows 导入 Android 二维码时，先把二维码保存或截图为图片，再选择“读取二维码图片”；也可用“粘贴 Contact”导入原始文本载荷。</li><li>保存前在另一条可信通道当面核对 fingerprint。确认后 Windows 会把自己的签名 IntroBundle 回传给出示方，由对方再次核对后保存。</li></ol>
+    <div class="notice safe">有效签名只能证明 Contact 未被篡改，不能自动证明屏幕另一端就是你认识的人。现实身份仍需人工核对 fingerprint。</div>
+    <p>联系人页支持备注、删除和创建群组。删除联系人时，客户端会尽力发送端到端加密的删除通知，然后清理本机联系人记录。</p>
+  </section>
+
+  <section id="chat" class="card"><h2>3. 消息和文件</h2>
+    <p>聊天页可发送一对一文本、群文本和文件。每条消息最终都是只供目标身份解密的 opaque envelope。</p>
+    <p>每个会话先加载最近 100 条消息；选择“加载更早消息”可继续向前分页。列表支持 Ctrl / Shift 多选，再用“删除所选”批量删除本机记录；这些操作不会删除对方设备上的消息。</p>
+    <table><thead><tr><th>状态</th><th>含义</th></tr></thead><tbody>
+      <tr><td><code>sent</code></td><td>P2P 或 route 直连已送出。</td></tr><tr><td><code>server_mailbox</code></td><td>已写入同步服务的离线邮箱。</td></tr>
+      <tr><td><code>pending</code></td><td>暂未投递，已在本机加密状态中保留以便重试。</td></tr><tr><td><code>delivered</code></td><td>对端已解密入库并 ACK。</td></tr>
+    </tbody></table>
+    <h3>在线文件</h3><p>单个文件上限为 64 MiB。客户端按 4 MiB 分片，逐片计算 SHA-256、逐信封加密；接收端只有在分片哈希和整文件哈希都通过后才生成最终文件。</p>
+    <p>接收文件位于 <code class="path">%USERPROFILE%\Downloads\Envelope\received</code>。双击或从资源管理器打开时由 Windows 默认应用处理。</p>
+  </section>
+
+  <section id="groups" class="card"><h2>4. 群组</h2>
+    <p>建群至少需要群主和两位受邀者。Envelope 不使用服务器可见的共享群密钥；群文本、群文件和控制事件都按成员逐一加密 fan-out。</p>
+    <div class="grid"><div><h3>普通群</h3><p>受邀者接受后成为 active 成员。</p></div><div><h3>验证群</h3><p>只向这台电脑上已核对并信任的 active 成员发送；远端成员不能替你自报为已验证。</p></div><div><h3>共识群</h3><p>接受后先进入 accepted，达到 60% active 成员背书阈值后进入 active。</p></div></div>
+    <p>验证群中，在“管理群组”选择成员，先通过可信通道核对 fingerprint，再选择“信任 fingerprint”；也可随时取消这台电脑上的信任。该本机判断不作为远端控制事件传播。</p>
+    <p>群组支持邀请、接受或拒绝、改名、头像 seed、成员移除、退出和解散。群主退出或有效成员少于 3 人时，客户端会停用群组并生成带原因的控制事件。</p>
+  </section>
+
+  <section id="offline" class="card"><h2>5. 离线密封与拆封</h2>
+    <p>离线密封支持联系人和群组，可把文本或任意大小文件密封到 <code class="path">Downloads\Envelope\sealed</code>。一对一大文件使用 <code>ENVELOPE_STREAM_V1</code>；群组使用 Android 兼容的 <code>ENVELOPE_GROUP_STREAM_V1</code>，按当前群策略为每位可投递成员写入独立密文。文件按 4 MiB 分片流式处理，不会一次性把整个明文读入内存；群组密文体积会随成员数增加。</p>
+    <ol class="steps"><li>在聊天页选择联系人或群组，点击“离线密封”。</li><li>选择文本或文件并生成 <code>.envelope</code>。</li><li>通过邮件、网盘或 U 盘交付密文文件。</li><li>接收方在“拆封”页选择文件；一对一单体信封也可粘贴 base64。群组导入时会跳过发给其他成员的密文，并再次检查当前成员状态、Verified 群本机信任和 replay counter。</li></ol>
+    <p>拆封会验证发送方 Contact、信封认证、消息计数器以及文件哈希，成功后才写入聊天记录和 received 目录。</p>
+  </section>
+
+  <section id="sync" class="card"><h2>6. 消息同步与投递阶梯</h2>
+    <ol class="steps"><li>在设置页填写 Envelope Server 的 HTTPS 域名或受信任 IP 地址并保存。</li><li>选择“立即同步”。Windows 会发布当前短期 P2P route、拉取 mailbox、解密入库、发送 ACK，并查询送达回执。</li><li>保持应用前台运行可接收直接 TCP P2P；首次监听时 Windows 防火墙可能请求授权。</li></ol>
+    <p>投递顺序为：<code>P2P direct → server route retry → server mailbox → local pending</code>。节点清单和 challenge 必须通过 Rust core 签名校验，才会进入多节点选择。</p>
+    <p>本机 pending 重试独立于 mailbox 同步：即使未配置服务器或服务器暂时不可用，应用运行时仍会按退避时间重试可用的 P2P 路径；“立即同步”失败时也会单独执行一次 pending 重试。</p>
+  </section>
+
+  <section id="backup" class="card"><h2>7. 本地备份与终端迁移</h2>
+    <p>“导出备份”使用当前身份把备份自加密，不要求把恢复词长期留在程序中。恢复备份时仍必须输入匹配的 24 词，以重新派生同一身份并解密。备份内容含身份 Key ID、显示名、同步入口、联系人、群组、群成员、有界签名群事件历史、压缩 anti-replay counter ranges 和备份策略；不含恢复词、裸私钥、聊天记录及 received / sealed 文件。</p>
+    <p>启用自动备份后，应用运行期间按所选间隔写入同样的 Android / Windows 兼容 v2 备份，并按保留数量清理较旧的同前缀备份。</p>
+    <ol class="steps"><li>在旧终端导出加密备份并保存恢复词。</li><li>停止旧终端作为活跃消息端，保留一份可回滚备份。</li><li>在 Windows 选择“恢复备份”，输入相同 24 词并选择备份文件；确认后会为新 endpoint 轮换 message-counter namespace。</li><li>核对恢复出的 Key ID 与备份身份一致，然后重新发布 route、与重要联系人测试收发。</li></ol>
+    <div class="notice warn">在 Windows 验证收发成功前，不要清除旧终端。验证完成后，旧终端不得继续发布 route 或同时作为当前投递目标。</div>
+  </section>
+
+  <section id="storage" class="card"><h2>8. 存储、安全与诊断</h2>
+    <h3>本机私有状态</h3><p>位于 <code class="path">%LOCALAPPDATA%\Envelope</code>。随机 256-bit 主密钥由 Windows DPAPI CurrentUser 保护；每个状态槽用 AES-256-GCM 独立加密，槽名绑定为 AAD，避免密文文件调包。恢复词默认不持久化。</p>
+    <h3>本地锁</h3><p>启用前必须先成功完成一次 Windows Hello / 系统凭据验证。启动应用、整个应用离开前台超过 30 秒后返回，以及恢复或清除身份、备份恢复等敏感操作都会再次验证；离开应用时已打开的恢复词或密封文本子窗口会立即关闭。若当前账户未配置可用验证器、设备被策略禁用、用户取消或运行时出错，Envelope 会保持锁定，不会自动关闭该安全设置。本地锁是设备本地策略，恢复 Android / Windows 便携备份不会改变它。</p>
+    <h3>用户可见目录</h3><table><tbody><tr><td><code>received</code></td><td>接收并校验完成的文件</td></tr><tr><td><code>sealed</code></td><td>离线密封输出</td></tr><tr><td><code>backups</code></td><td>用恢复词加密的本地备份</td></tr><tr><td><code>diagnostics</code></td><td>用户主动导出的诊断日志</td></tr></tbody></table>
+    <h3>诊断边界</h3><p>日志只记录操作、网络路径、耗时、Envelope ID 和错误摘要；不得记录消息正文、文件内容、私钥、Identity JSON、恢复词或主密钥。</p>
+    <h3>发布校验</h3><p>发布包内含 <code>Envelope.Windows.exe</code>、<code>envelope_ffi.dll</code>、许可证、手册和可执行文件 SHA-256。默认包需要目标电脑已安装 .NET 8 Windows Desktop Runtime；使用构建脚本的 <code>-SelfContained</code> 选项可在 NuGet runtime pack 可用时生成自包含包。请从可信发布渠道取得并核对哈希。</p>
+  </section>
+  <footer>Envelope Windows · AGPL-3.0-or-later · 项目尚未完成独立安全审计</footer>
+</main></body></html>

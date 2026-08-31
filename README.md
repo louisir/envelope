@@ -1,30 +1,35 @@
 # Envelope / 信封
 
-Envelope 是一个以 Android 为主的端到端加密通信项目。
+Envelope 是一个面向 Android 和 Windows 的端到端加密通信项目。
 
-Envelope is an Android-first end-to-end encrypted communication project.
+Envelope is an end-to-end encrypted communication project for Android and Windows.
 
 消息、文件和群组事件会被编码为 opaque 加密信封。客户端负责身份、加密、解密和本地状态；Envelope Server 负责路由、mailbox 兜底、intro 会话和节点发现，但不能解密消息内容。
 
 Messages, files, and group events are encoded as opaque encrypted envelopes. The client owns identity, encryption, decryption, and local state. Envelope Server provides routing, mailbox fallback, intro sessions, and node discovery, but cannot decrypt message content.
 
-当前状态：MVP / 持续开发中。Android 客户端是当前主要产品形态。项目尚未经过独立安全审计。
+当前状态：MVP / 持续开发中。仓库包含 Flutter / Android 客户端和 C# / WPF Windows 客户端；两端共用 Rust 协议与密码学核心。项目尚未经过独立安全审计。
 
-Status: MVP / active development. The Android client is the primary product surface. The project has not completed an independent security audit.
+Status: MVP / active development. The repository contains Flutter / Android and C# / WPF Windows clients backed by the same Rust protocol and cryptographic core. The project has not completed an independent security audit.
 
 ## 能力 / Features
 
 - 一对一端到端加密文本和文件消息。 / One-to-one end-to-end encrypted text and file messages.
 - Android Keystore 保护本地数据库密钥。 / Android Keystore protects the local database key.
 - SQLCipher 本地聊天数据库。 / Local SQLCipher chat database.
+- Windows DPAPI CurrentUser 保护随机主密钥，并用 AES-256-GCM 分槽加密本机状态。 / Windows DPAPI CurrentUser protects a random master key, and AES-256-GCM encrypts each local state slot.
+- Windows Hello / 系统凭据本地锁覆盖启动、应用级离开后恢复及敏感操作，验证失败时保持 fail-closed。 / Windows Hello / system-credential local lock covers startup, application-level resume, and sensitive actions with fail-closed behavior.
+- Windows WPF 五页客户端：关于、联系人、聊天、拆封和设置，支持中英文与明暗主题。 / Five-page Windows WPF client with About, Contacts, Chat, Open, and Settings, plus Chinese/English localization and light/dark themes.
 - 恢复词 + 本地备份文件的一次性恢复流程，可恢复身份、联系人、群组和本机设置。 / One-step recovery with recovery phrase plus local backup file, restoring identity, contacts, groups, and local settings.
 - 本机身份自加密的本地备份，以及可配置的自动备份策略。 / Self-encrypted local backups and configurable auto-backup policy.
-- 二维码联系人交换和 fingerprint 确认。 / QR contact exchange with fingerprint confirmation.
+- Android / Windows 二维码互扫（Windows 可生成并读取图片）、签名 Contact / IntroBundle 文本交换、短期 intro-session 双向互加，以及保存前 fingerprint 人工确认。 / Android / Windows QR exchange (Windows generation and image decoding), signed Contact / IntroBundle text exchange, short-lived mutual intro sessions, and manual fingerprint confirmation before saving.
 - 投递兜底链路：P2P direct -> server route retry -> server mailbox。 / Delivery fallback path: P2P direct -> server route retry -> server mailbox.
 - 基于签名 `NodeSetManifest` 的多入口服务节点池。 / Multi-entry service node pool based on signed `NodeSetManifest`.
 - route、mailbox、receipt 和 ACK tombstone 的服务端 best-effort 节点同步。 / Best-effort server-side node sync for routes, mailbox items, receipts, and ACK tombstones.
-- 一对一文本和文件离线密封。 / One-to-one offline sealing for text and files.
+- 一对一及群组文本和文件离线密封；群组流为每位可投递成员分别加密。 / One-to-one and group offline sealing for text and files, with a separately encrypted group-stream copy per eligible recipient.
 - 群组在线消息，按接收成员逐一加密 fan-out。 / Online group messages with per-recipient encrypted fan-out.
+- 普通群、验证群和共识群，包含本机 fingerprint 信任、成员控制事件及群文件 fan-out。 / Normal, verified, and consensus groups with local fingerprint trust, membership control events, and group-file fan-out.
+- Windows 聊天界面按页加载、Ctrl / Shift 多选和本机批量删除。 / Windows chat paging, Ctrl / Shift multi-select, and local bulk deletion.
 - 客户端诊断日志和 replay 检测。 / Client diagnostic logs and replay detection.
 - Android release APK 签名和 update manifest 生成。 / Android release APK signing and update manifest generation.
 
@@ -50,25 +55,26 @@ The current protocol is not an implementation of Signal Protocol, Double Ratchet
 
 - mailbox 层不是跨节点强一致多副本存储。 / The mailbox layer is not strongly consistent replicated storage across nodes.
 - 节点同步是 best-effort，不是基于仲裁的多副本强一致存储。 / Node sync is best-effort, not quorum-based strongly consistent replication.
-- Android 客户端当前采用单 active messaging device 模型。 / The Android client currently uses a single active messaging device model.
+- Android 与 Windows 客户端采用单 active messaging endpoint 模型；恢复到另一平台是显式迁移，不是多端同步。 / Android and Windows clients use a single-active-messaging-endpoint model; recovery onto another platform is an explicit migration, not multi-device sync.
 - 群消息不是 MLS，也不使用共享群密钥。 / Group messaging is not MLS and does not use shared group keys.
-- 离线密封仅支持一对一投递。 / Offline sealing currently supports one-to-one delivery only.
+- 群组离线密封会随成员数放大密文文件，不使用共享群密钥。 / Group offline sealing expands the ciphertext file with recipient count and does not use a shared group key.
 - WebSocket relay、TURN、音视频和多设备同步尚未实现。 / WebSocket relay, TURN, audio/video, and multi-device sync are not implemented.
 
 ## 仓库结构 / Repository Layout
 
 ```text
 apps/envelope_app        Flutter / Android client
+apps/envelope_windows    C# / .NET 8 WPF Windows client
 apps/envelope-server     Rust Envelope Server
 apps/envelope-cli        development CLI
 crates/envelope-core     identity, contacts, signatures, and envelope crypto
-crates/envelope-ffi      Rust FFI used by the Android client
+crates/envelope-ffi      Rust FFI used by the Android and Windows clients
 crates/envelope-store    development local store
 crates/envelope-net      P2P prototype layer
 crates/envelope-server-core
                           server protocol and node manifest types
 deploy/envelope-server   Linux deployment scripts
-docs                     design document and Android user manual
+docs                     design document and Android / Windows user manuals
 scripts                  build, release, and test scripts
 ```
 
@@ -120,6 +126,16 @@ cargo run -p envelope-server -- --bind 127.0.0.1:19093 --database target/envelop
 
 Official GitHub Release packages do not enable ADB bridge; USB test and automation verification builds may enable it.
 
+构建 Windows WPF 客户端与发布包 / Build the Windows WPF client and package:
+
+```powershell
+.\scripts\build-windows-wpf.ps1
+```
+
+该脚本构建同仓库的 `envelope_ffi.dll`、编译并验证 .NET solution，然后在 `target\portable` 生成 Windows x64 包和可执行文件 SHA-256。开发说明见 [apps/envelope_windows/README.md](apps/envelope_windows/README.md)。
+
+The script builds the repository's `envelope_ffi.dll`, compiles and verifies the .NET solution, and then creates the Windows x64 package and executable SHA-256 under `target\portable`. See [apps/envelope_windows/README.md](apps/envelope_windows/README.md) for development details.
+
 Android 客户端首次使用前，在设置页的“消息同步 / 中继矩阵入口”中填写同步服务域名或 IP。
 
 Before first use, configure the sync service domain or IP in the Android client's Settings -> Message Sync / Relay Matrix Entry.
@@ -156,6 +172,7 @@ Envelope Server is a Rust + Axum service. Linux deployment scripts are in [deplo
 
 - [设计文档 / Design Document](docs/design.md)
 - [Android 用户手册 / Android User Manual](docs/android-user-manual.html)
+- [Windows 用户手册 / Windows User Manual](docs/windows-user-manual.html)
 
 ## 授权 / License
 

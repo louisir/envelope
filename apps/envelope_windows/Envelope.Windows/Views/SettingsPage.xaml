@@ -1,0 +1,422 @@
+<UserControl x:Class="Envelope.Windows.Views.SettingsPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:services="clr-namespace:Envelope.Windows.Services"
+             mc:Ignorable="d">
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+        <Grid MaxWidth="1100" Margin="38,32,38,48" HorizontalAlignment="Center">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <StackPanel>
+                <TextBlock Style="{StaticResource Text.PageTitle}" Text="{DynamicResource Settings.Title}" />
+                <TextBlock Style="{StaticResource Text.PageSubtitle}" Text="{DynamicResource Settings.Subtitle}" />
+            </StackPanel>
+
+            <Border Grid.Row="1" Margin="0,25,0,0" Style="{StaticResource Card}">
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="42" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Border Width="34" Height="34" Background="{DynamicResource Brush.AccentSoft}" CornerRadius="9">
+                            <TextBlock HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       FontFamily="Segoe Fluent Icons"
+                                       FontSize="16"
+                                       Foreground="{DynamicResource Brush.Accent}"
+                                       Text="&#xE77B;" />
+                        </Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                            <TextBlock Style="{StaticResource Text.SectionTitle}" Text="{DynamicResource Settings.IdentitySection}" />
+                            <TextBlock Margin="0,3,0,0">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource Text.Caption}">
+                                        <Setter Property="Text" Value="{DynamicResource Settings.IdentityMissing}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsIdentityReady}" Value="True">
+                                                <Setter Property="Text" Value="{DynamicResource Settings.IdentityReady}" />
+                                                <Setter Property="Foreground" Value="{DynamicResource Brush.Success}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
+                        <Border Grid.Column="2">
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse Width="7" Height="7" Margin="0,0,7,0" Fill="{DynamicResource Brush.Success}" />
+                                <TextBlock FontSize="11"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource Brush.Success}"
+                                           Text="{DynamicResource Common.Ready}" />
+                            </StackPanel>
+                            <Border.Style>
+                                <Style TargetType="Border" BasedOn="{StaticResource StatusPill}">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsIdentityReady}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                        </Border>
+                    </Grid>
+
+                    <Border Margin="0,18,0,18" Style="{StaticResource Divider}" />
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="22" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource Text.Caption}" Text="{DynamicResource Settings.DisplayName}" />
+                            <TextBox Margin="0,7,0,0"
+                                     Tag="{DynamicResource Settings.DisplayNameHint}"
+                                     Text="{Binding DisplayName, UpdateSourceTrigger=PropertyChanged}"
+                                     ToolTip="{DynamicResource Settings.DisplayNameHint}" />
+                            <Button Margin="0,11,0,0"
+                                    HorizontalAlignment="Left"
+                                    Command="{Binding CreateIdentityCommand}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Margin="0,0,8,0" FontFamily="Segoe Fluent Icons" Text="&#xE83B;" />
+                                    <TextBlock Text="{DynamicResource Settings.CreateIdentity}" />
+                                </StackPanel>
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource Button.Primary}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsIdentityReady}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+
+                            <StackPanel Margin="0,2,0,0">
+                                <StackPanel.Style>
+                                    <Style TargetType="StackPanel">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsIdentityReady}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </StackPanel.Style>
+                                <TextBlock Margin="0,12,0,0" Style="{StaticResource Text.Caption}" Text="{DynamicResource Contacts.KeyId}" />
+                                <Grid Margin="0,6,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox IsReadOnly="True"
+                                             FontFamily="Consolas"
+                                             FontSize="11"
+                                             Text="{Binding IdentityKeyId, Mode=OneWay}" />
+                                    <Button Grid.Column="1"
+                                            Margin="8,0,0,0"
+                                            Command="{Binding CopyKeyIdCommand}"
+                                            Content="&#xE8C8;"
+                                            Style="{StaticResource Button.Icon}"
+                                            ToolTip="{DynamicResource Settings.CopyKeyId}" />
+                                </Grid>
+                                <TextBlock Margin="0,12,0,0" Style="{StaticResource Text.Caption}" Text="{DynamicResource Contacts.Fingerprint}" />
+                                <TextBlock Margin="0,6,0,0"
+                                           FontFamily="Consolas"
+                                           FontSize="11"
+                                           Text="{Binding IdentityFingerprint}"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Style="{StaticResource Text.Caption}" Text="{DynamicResource Settings.RecoveryPhrase}" />
+                            <TextBox MinHeight="92"
+                                     Margin="0,7,0,0"
+                                     AcceptsReturn="True"
+                                     Tag="{DynamicResource Settings.RecoveryHint}"
+                                     Text="{Binding RecoveryPhrase, UpdateSourceTrigger=PropertyChanged}"
+                                     TextWrapping="Wrap"
+                                     ToolTip="{DynamicResource Settings.RecoveryHint}"
+                                     VerticalContentAlignment="Top" />
+                            <Grid Margin="0,11,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Button Command="{Binding RecoverIdentityCommand}"
+                                        Content="{DynamicResource Settings.RecoverIdentity}" />
+                                <Button Grid.Column="2"
+                                        Command="{Binding ClearPhraseCommand}"
+                                        Content="{DynamicResource Settings.ClearPhrase}"
+                                        Style="{StaticResource Button.Quiet}" />
+                            </Grid>
+                        </StackPanel>
+                    </Grid>
+
+                    <Border Margin="0,18,0,0" Padding="12" Background="{DynamicResource Brush.DangerSoft}" CornerRadius="8">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock FontWeight="SemiBold"
+                                           Foreground="{DynamicResource Brush.Danger}"
+                                           Text="{DynamicResource Settings.DangerZone}" />
+                                <TextBlock Margin="0,3,0,0"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource Brush.TextMuted}"
+                                           Text="{DynamicResource Settings.ClearIdentity}" />
+                            </StackPanel>
+                            <Button Grid.Column="1"
+                                    Command="{Binding ClearIdentityCommand}"
+                                    Content="{DynamicResource Settings.ClearIdentity}"
+                                    Style="{StaticResource Button.Danger}" />
+                        </Grid>
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsIdentityReady}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                    </Border>
+                </StackPanel>
+            </Border>
+
+            <Grid Grid.Row="2" Margin="0,18,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="3*" />
+                    <ColumnDefinition Width="18" />
+                    <ColumnDefinition Width="2*" />
+                </Grid.ColumnDefinitions>
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource Text.SectionTitle}" Text="{DynamicResource Settings.BackupSection}" />
+                        <TextBlock Margin="0,7,0,0"
+                                   Foreground="{DynamicResource Brush.TextMuted}"
+                                   LineHeight="19"
+                                   Text="{DynamicResource Settings.BackupText}"
+                                   TextWrapping="Wrap" />
+                        <Grid Margin="0,15,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="8" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Button Command="{Binding ExportBackupCommand}" Content="{DynamicResource Settings.ExportBackup}" />
+                            <Button Grid.Column="2" Command="{Binding RestoreBackupCommand}" Content="{DynamicResource Settings.RestoreBackup}" />
+                        </Grid>
+                        <Border Margin="0,17,0,16" Style="{StaticResource Divider}" />
+                        <CheckBox IsChecked="{Binding AutoBackupEnabled}"
+                                  Style="{StaticResource Switch}">
+                            <StackPanel>
+                                <TextBlock FontWeight="SemiBold" Text="{DynamicResource Settings.AutoBackup}" />
+                                <TextBlock Margin="0,3,0,0"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource Brush.TextMuted}"
+                                           Text="{DynamicResource Settings.AutoBackupText}" />
+                            </StackPanel>
+                        </CheckBox>
+                        <Grid Margin="0,15,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource Text.Caption}" Text="{DynamicResource Settings.BackupInterval}" />
+                                <ComboBox Margin="0,6,0,0"
+                                          ItemsSource="{Binding BackupIntervals}"
+                                          SelectedItem="{Binding BackupInterval}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Style="{StaticResource Text.Caption}" Text="{DynamicResource Settings.BackupRetention}" />
+                                <ComboBox Margin="0,6,0,0"
+                                          ItemsSource="{Binding BackupRetentions}"
+                                          SelectedItem="{Binding BackupRetention}" />
+                            </StackPanel>
+                        </Grid>
+                        <Button Margin="0,13,0,0"
+                                HorizontalAlignment="Right"
+                                Command="{Binding SaveSyncEntryCommand}"
+                                Content="{DynamicResource Common.Save}" />
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Column="2" Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource Text.SectionTitle}" Text="{DynamicResource Settings.SecuritySection}" />
+                        <Border Margin="0,14,0,0" Padding="14" Background="{DynamicResource Brush.SurfaceAlt}" CornerRadius="9">
+                            <CheckBox IsChecked="{Binding LocalLockEnabled}" Style="{StaticResource Switch}">
+                                <StackPanel>
+                                    <TextBlock FontWeight="SemiBold" Text="{DynamicResource Settings.AppLock}" TextWrapping="Wrap" />
+                                    <TextBlock Margin="0,4,0,0"
+                                               FontSize="11"
+                                               Foreground="{DynamicResource Brush.TextMuted}"
+                                               LineHeight="17"
+                                               Text="{DynamicResource Settings.AppLockText}"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+                            </CheckBox>
+                        </Border>
+                        <Border Margin="0,14,0,0" Padding="12" Background="{DynamicResource Brush.AccentSoft}" CornerRadius="8">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Margin="0,1,9,0"
+                                           FontFamily="Segoe Fluent Icons"
+                                           Foreground="{DynamicResource Brush.Accent}"
+                                           Text="&#xE72E;" />
+                                <TextBlock FontSize="11"
+                                           Foreground="{DynamicResource Brush.TextMuted}"
+                                           Text="{DynamicResource App.PrivacyNote}"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+                        <Button Margin="0,14,0,0"
+                                HorizontalAlignment="Right"
+                                Command="{Binding SaveSyncEntryCommand}"
+                                Content="{DynamicResource Common.Save}" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <Border Grid.Row="3" Margin="0,18,0,0" Style="{StaticResource Card}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="3*" />
+                        <ColumnDefinition Width="24" />
+                        <ColumnDefinition Width="2*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource Text.SectionTitle}" Text="{DynamicResource Settings.SyncSection}" />
+                        <CheckBox Margin="0,14,0,0"
+                                  IsChecked="{Binding AutoSyncEnabled}"
+                                  Style="{StaticResource Switch}">
+                            <StackPanel>
+                                <TextBlock FontWeight="SemiBold" Text="{DynamicResource Settings.AutoSync}" />
+                                <TextBlock Margin="0,3,0,0"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource Brush.TextMuted}"
+                                           Text="{DynamicResource Settings.AutoSyncText}"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                        </CheckBox>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Style="{StaticResource Text.Caption}" Text="{DynamicResource Settings.SyncEntry}" />
+                        <TextBox Margin="0,7,0,0"
+                                 Tag="{DynamicResource Settings.SyncEntryHint}"
+                                 Text="{Binding SyncEntry, UpdateSourceTrigger=PropertyChanged}"
+                                 ToolTip="{DynamicResource Settings.SyncEntryHint}" />
+                        <Grid Margin="0,10,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="8" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Button Command="{Binding SaveSyncEntryCommand}" Content="{DynamicResource Settings.SaveSync}" />
+                            <Button Grid.Column="2"
+                                    Command="{Binding SyncNowCommand}"
+                                    Content="{DynamicResource Settings.SyncNow}"
+                                    Style="{StaticResource Button.Primary}" />
+                        </Grid>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Grid Grid.Row="4" Margin="0,18,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="18" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource Text.SectionTitle}" Text="{DynamicResource Settings.StorageSection}" />
+                        <TextBlock Margin="0,13,0,0" Style="{StaticResource Text.CardTitle}" Text="{DynamicResource Settings.FileCache}" />
+                        <TextBlock Margin="0,6,0,14"
+                                   Foreground="{DynamicResource Brush.TextMuted}"
+                                   Text="{DynamicResource Settings.FileCacheText}"
+                                   TextWrapping="Wrap" />
+                        <Button HorizontalAlignment="Left"
+                                Command="{Binding ClearFileCacheCommand}"
+                                Content="{DynamicResource Settings.ClearCache}"
+                                Style="{StaticResource Button.Danger}" />
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="2" Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource Text.SectionTitle}" Text="{DynamicResource Settings.DiagnosticsSection}" />
+                        <TextBlock Margin="0,13,0,0" Style="{StaticResource Text.CardTitle}" Text="{DynamicResource Settings.Diagnostics}" />
+                        <TextBlock Margin="0,6,0,14"
+                                   Foreground="{DynamicResource Brush.TextMuted}"
+                                   Text="{DynamicResource Settings.DiagnosticsText}"
+                                   TextWrapping="Wrap" />
+                        <StackPanel Orientation="Horizontal">
+                            <Button Margin="0,0,8,0"
+                                    Command="{Binding ExportDiagnosticsCommand}"
+                                    Content="{DynamicResource Settings.ExportLogs}" />
+                            <Button Command="{Binding ClearDiagnosticsCommand}"
+                                    Content="{DynamicResource Settings.ClearLogs}"
+                                    Style="{StaticResource Button.Danger}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <Border Grid.Row="5" Margin="0,18,0,0" Style="{StaticResource Card.Quiet}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="2*" />
+                        <ColumnDefinition Width="20" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="20" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Style="{StaticResource Text.SectionTitle}" Text="{DynamicResource Settings.AppearanceSection}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Style="{StaticResource Text.Caption}" Text="{DynamicResource Settings.Language}" />
+                        <ComboBox Margin="0,6,0,0"
+                                  SelectedValue="{Binding SelectedLanguageCode, Mode=TwoWay}"
+                                  SelectedValuePath="Tag">
+                            <ComboBoxItem Content="{DynamicResource Settings.LanguageChinese}" Tag="zh-CN" />
+                            <ComboBoxItem Content="{DynamicResource Settings.LanguageEnglish}" Tag="en-US" />
+                        </ComboBox>
+                    </StackPanel>
+                    <StackPanel Grid.Column="4">
+                        <TextBlock Style="{StaticResource Text.Caption}" Text="{DynamicResource Settings.Theme}" />
+                        <ComboBox Margin="0,6,0,0"
+                                  SelectedValue="{Binding SelectedTheme, Mode=TwoWay}"
+                                  SelectedValuePath="Tag">
+                            <ComboBoxItem Content="{DynamicResource Settings.ThemeSystem}" Tag="{x:Static services:ThemePreference.System}" />
+                            <ComboBoxItem Content="{DynamicResource Settings.ThemeLight}" Tag="{x:Static services:ThemePreference.Light}" />
+                            <ComboBoxItem Content="{DynamicResource Settings.ThemeDark}" Tag="{x:Static services:ThemePreference.Dark}" />
+                        </ComboBox>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+    </ScrollViewer>
+</UserControl>

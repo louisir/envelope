@@ -1,5 +1,255 @@
 import 'dart:convert';
 
+const int androidMessageCounterNamespaceBits = 32;
+const int androidMessageCounterStride = 1 << androidMessageCounterNamespaceBits;
+const int androidMessageCounterNamespaceMask = androidMessageCounterStride - 1;
+const int androidMaximumMessageCounter = 0x7fffffffffffffff;
+const int androidMaximumMessageCounterSequence =
+    androidMaximumMessageCounter >> androidMessageCounterNamespaceBits;
+const int androidPortableRestoreCounterReservation = 1024;
+const int androidMaximumPortableReceivedCounters = 1000000;
+const int androidMaximumPortableGroupEvents = 10000;
+const int androidMaximumPortableGroupEventPayloadBytes = 1024 * 1024;
+const int androidMaximumPortableGroupEventPayloadTotalBytes = 16 * 1024 * 1024;
+
+bool androidHasValidCounterLane({
+  required int nextMessageCounter,
+  required int counterNamespace,
+  required int counterNamespaceBits,
+}) {
+  return counterNamespaceBits == androidMessageCounterNamespaceBits &&
+      counterNamespace > 0 &&
+      counterNamespace <= androidMessageCounterNamespaceMask &&
+      nextMessageCounter >= androidMessageCounterStride &&
+      nextMessageCounter <= androidMaximumMessageCounter &&
+      (nextMessageCounter & androidMessageCounterNamespaceMask) ==
+          counterNamespace;
+}
+
+int androidMessageCounterSequence(int counter) {
+  if (counter <= 0) return 0;
+  return counter < androidMessageCounterStride
+      ? counter
+      : counter >> androidMessageCounterNamespaceBits;
+}
+
+int androidComposeMessageCounter(int sequence, int counterNamespace) {
+  if (sequence <= 0 || sequence > androidMaximumMessageCounterSequence) {
+    throw RangeError.range(
+      sequence,
+      1,
+      androidMaximumMessageCounterSequence,
+      'sequence',
+    );
+  }
+  if (counterNamespace <= 0 ||
+      counterNamespace > androidMessageCounterNamespaceMask) {
+    throw RangeError.range(
+      counterNamespace,
+      1,
+      androidMessageCounterNamespaceMask,
+      'counterNamespace',
+    );
+  }
+  return (sequence << androidMessageCounterNamespaceBits) | counterNamespace;
+}
+
+int androidAdvanceMessageCounter(int counter, [int count = 1]) {
+  if (counter <= 0) {
+    throw RangeError.value(counter, 'counter', 'must be positive');
+  }
+  if (count < 0) {
+    throw RangeError.value(count, 'count', 'must not be negative');
+  }
+  final delta = counter >= androidMessageCounterStride
+      ? count * androidMessageCounterStride
+      : count;
+  final result = counter + delta;
+  if (result > androidMaximumMessageCounter) {
+    throw StateError('Android message counter lane is exhausted');
+  }
+  return result;
+}
+
+int androidInferredCounterNamespace({
+  required int nextMessageCounter,
+  required int counterNamespace,
+  required int counterNamespaceBits,
+}) {
+  if (counterNamespace != 0 ||
+      counterNamespaceBits != 0 ||
+      nextMessageCounter < androidMessageCounterStride) {
+    return 0;
+  }
+  return nextMessageCounter & androidMessageCounterNamespaceMask;
+}
+
+class AndroidReceivedCounterRange {
+  const AndroidReceivedCounterRange(this.start, this.end);
+
+  factory AndroidReceivedCounterRange.fromJson(Object? json) {
+    if (json is! List || json.length != 2) {
+      throw const FormatException(
+        'received counter range must have two bounds',
+      );
+    }
+    final start = _positiveCounter(json[0]);
+    final end = _positiveCounter(json[1]);
+    if (end < start) {
+      throw const FormatException('received counter range end precedes start');
+    }
+    return AndroidReceivedCounterRange(start, end);
+  }
+
+  final int start;
+  final int end;
+
+  int get length => end - start + 1;
+
+  List<int> toJson() => [start, end];
+}
+
+class AndroidReceivedCounterRanges {
+  const AndroidReceivedCounterRanges({
+    required this.senderKeyId,
+    required this.ranges,
+  });
+
+  factory AndroidReceivedCounterRanges.fromJson(Map<Object?, Object?> json) {
+    final senderKeyId = (json['sender_key_id']?.toString() ?? '').trim();
+    if (senderKeyId.isEmpty) {
+      throw const FormatException('received counter sender_key_id is empty');
+    }
+    final wireRanges = json['ranges'];
+    if (wireRanges is! List) {
+      throw const FormatException('received counter ranges must be an array');
+    }
+    return AndroidReceivedCounterRanges(
+      senderKeyId: senderKeyId,
+      ranges: _normalizeCounterRanges(
+        wireRanges.map(AndroidReceivedCounterRange.fromJson),
+      ),
+    );
+  }
+
+  final String senderKeyId;
+  final List<AndroidReceivedCounterRange> ranges;
+
+  int get counterCount => ranges.fold(0, (sum, range) => sum + range.length);
+
+  Map<String, Object?> toJson() => {
+    'sender_key_id': senderKeyId,
+    'ranges': ranges.map((range) => range.toJson()).toList(),
+  };
+}
+
+int _positiveCounter(Object? value) {
+  if (value is! num) {
+    throw const FormatException('received counter bound is not numeric');
+  }
+  final parsed = value.toInt();
+  if (parsed <= 0 || parsed > androidMaximumMessageCounter || parsed != value) {
+    throw const FormatException('received counter bound is invalid');
+  }
+  return parsed;
+}
+
+List<AndroidReceivedCounterRange> _normalizeCounterRanges(
+  Iterable<AndroidReceivedCounterRange> ranges,
+) {
+  final sorted = ranges.toList()
+    ..sort((left, right) {
+      final start = left.start.compareTo(right.start);
+      return start != 0 ? start : left.end.compareTo(right.end);
+    });
+  final result = <AndroidReceivedCounterRange>[];
+  for (final range in sorted) {
+    if (result.isEmpty) {
+      result.add(range);
+      continue;
+    }
+    final previous = result.last;
+    if (range.start <= previous.end ||
+        (previous.end < androidMaximumMessageCounter &&
+            range.start == previous.end + 1)) {
+      result[result.length - 1] = AndroidReceivedCounterRange(
+        previous.start,
+        range.end > previous.end ? range.end : previous.end,
+      );
+    } else {
+      result.add(range);
+    }
+  }
+  return List.unmodifiable(result);
+}
+
+List<AndroidReceivedCounterRanges> androidNormalizeReceivedCounterRanges(
+  Iterable<AndroidReceivedCounterRanges> senders,
+) {
+  final bySender = <String, List<AndroidReceivedCounterRange>>{};
+  for (final sender in senders) {
+    final keyId = sender.senderKeyId.trim();
+    if (keyId.isEmpty) {
+      throw const FormatException('received counter sender_key_id is empty');
+    }
+    bySender.putIfAbsent(keyId, () => []).addAll(sender.ranges);
+  }
+  final result =
+      bySender.entries
+          .map(
+            (entry) => AndroidReceivedCounterRanges(
+              senderKeyId: entry.key,
+              ranges: _normalizeCounterRanges(entry.value),
+            ),
+          )
+          .where((sender) => sender.ranges.isNotEmpty)
+          .toList()
+        ..sort((left, right) => left.senderKeyId.compareTo(right.senderKeyId));
+  final count = result.fold(0, (sum, sender) => sum + sender.counterCount);
+  if (count > androidMaximumPortableReceivedCounters) {
+    throw const FormatException(
+      'portable received counter ranges are too large',
+    );
+  }
+  return List.unmodifiable(result);
+}
+
+List<AndroidReceivedCounterRanges> _parsePortableReceivedCounterRanges(
+  Object? value,
+) {
+  if (value == null) return const [];
+  if (value is! List) {
+    throw const FormatException(
+      'portable received_counter_ranges must be an array',
+    );
+  }
+  final result = <AndroidReceivedCounterRanges>[];
+  for (final item in value) {
+    if (item is! Map) {
+      throw const FormatException(
+        'portable received counter must be an object',
+      );
+    }
+    result.add(AndroidReceivedCounterRanges.fromJson(item));
+  }
+  return androidNormalizeReceivedCounterRanges(result);
+}
+
+List<AndroidGroupEventRecord> _parsePortableGroupEvents(Object? value) {
+  if (value == null) return const [];
+  if (value is! List) {
+    throw const FormatException('portable group_events must be an array');
+  }
+  final events = <AndroidGroupEventRecord>[];
+  for (final item in value) {
+    if (item is! Map) {
+      throw const FormatException('portable group_event must be an object');
+    }
+    events.add(AndroidGroupEventRecord.fromPortableBackupJson(item));
+  }
+  return androidNormalizePortableGroupEvents(events);
+}
+
 class AndroidChatStore {
   const AndroidChatStore({
     required this.contacts,
@@ -7,6 +257,13 @@ class AndroidChatStore {
     required this.nextMessageCounter,
     this.groups = const [],
     this.groupMembers = const [],
+    this.groupEvents = const [],
+    this.counterNamespace = 0,
+    this.counterNamespaceBits = 0,
+    this.counterDeviceId,
+    this.receivedCounterRecipientKeyId,
+    this.receivedCounterRanges = const [],
+    this.retiredCounterNamespaces = const [],
   });
 
   factory AndroidChatStore.empty() {
@@ -16,6 +273,8 @@ class AndroidChatStore {
       nextMessageCounter: 1,
       groups: [],
       groupMembers: [],
+      groupEvents: [],
+      receivedCounterRanges: [],
     );
   }
 
@@ -45,7 +304,17 @@ class AndroidChatStore {
           .whereType<Map>()
           .map((item) => AndroidGroupMemberRecord.fromJson(item))
           .toList(),
+      groupEvents: _parsePortableGroupEvents(json['group_events']),
       nextMessageCounter: (json['next_message_counter'] as num?)?.toInt() ?? 1,
+      counterNamespace: (json['counter_namespace'] as num?)?.toInt() ?? 0,
+      counterNamespaceBits:
+          (json['counter_namespace_bits'] as num?)?.toInt() ?? 0,
+      counterDeviceId: json['counter_device_id']?.toString(),
+      receivedCounterRecipientKeyId: json['received_counter_recipient_key_id']
+          ?.toString(),
+      receivedCounterRanges: _parsePortableReceivedCounterRanges(
+        json['received_counter_ranges'],
+      ),
     ).normalized();
   }
 
@@ -54,6 +323,19 @@ class AndroidChatStore {
   final int nextMessageCounter;
   final List<AndroidGroupRecord> groups;
   final List<AndroidGroupMemberRecord> groupMembers;
+  final List<AndroidGroupEventRecord> groupEvents;
+  final int counterNamespace;
+  final int counterNamespaceBits;
+  final String? counterDeviceId;
+  final String? receivedCounterRecipientKeyId;
+  final List<AndroidReceivedCounterRanges> receivedCounterRanges;
+  final List<int> retiredCounterNamespaces;
+
+  bool get hasValidCounterLane => androidHasValidCounterLane(
+    nextMessageCounter: nextMessageCounter,
+    counterNamespace: counterNamespace,
+    counterNamespaceBits: counterNamespaceBits,
+  );
 
   AndroidChatStore normalized() {
     final sortedContacts = [...contacts]
@@ -70,12 +352,35 @@ class AndroidChatStore {
         if (roleCompare != 0) return roleCompare;
         return a.displayLabel.compareTo(b.displayLabel);
       });
+    final normalizedGroupEvents = androidNormalizePortableGroupEvents(
+      groupEvents,
+    );
+    final normalizedRetiredNamespaces =
+        retiredCounterNamespaces
+            .where(
+              (value) =>
+                  value > 0 &&
+                  value <= androidMessageCounterNamespaceMask &&
+                  value != counterNamespace,
+            )
+            .toSet()
+            .toList()
+          ..sort();
     return AndroidChatStore(
       contacts: sortedContacts,
       messages: sortedMessages,
       nextMessageCounter: nextMessageCounter < 1 ? 1 : nextMessageCounter,
       groups: sortedGroups,
       groupMembers: sortedGroupMembers,
+      groupEvents: normalizedGroupEvents,
+      counterNamespace: counterNamespace,
+      counterNamespaceBits: counterNamespaceBits,
+      counterDeviceId: counterDeviceId?.trim(),
+      receivedCounterRecipientKeyId: receivedCounterRecipientKeyId?.trim(),
+      receivedCounterRanges: androidNormalizeReceivedCounterRanges(
+        receivedCounterRanges,
+      ),
+      retiredCounterNamespaces: normalizedRetiredNamespaces,
     );
   }
 
@@ -174,6 +479,13 @@ class AndroidChatStore {
     int? nextMessageCounter,
     List<AndroidGroupRecord>? groups,
     List<AndroidGroupMemberRecord>? groupMembers,
+    List<AndroidGroupEventRecord>? groupEvents,
+    int? counterNamespace,
+    int? counterNamespaceBits,
+    String? counterDeviceId,
+    String? receivedCounterRecipientKeyId,
+    List<AndroidReceivedCounterRanges>? receivedCounterRanges,
+    List<int>? retiredCounterNamespaces,
   }) {
     return AndroidChatStore(
       contacts: contacts ?? this.contacts,
@@ -181,6 +493,16 @@ class AndroidChatStore {
       nextMessageCounter: nextMessageCounter ?? this.nextMessageCounter,
       groups: groups ?? this.groups,
       groupMembers: groupMembers ?? this.groupMembers,
+      groupEvents: groupEvents ?? this.groupEvents,
+      counterNamespace: counterNamespace ?? this.counterNamespace,
+      counterNamespaceBits: counterNamespaceBits ?? this.counterNamespaceBits,
+      counterDeviceId: counterDeviceId ?? this.counterDeviceId,
+      receivedCounterRecipientKeyId:
+          receivedCounterRecipientKeyId ?? this.receivedCounterRecipientKeyId,
+      receivedCounterRanges:
+          receivedCounterRanges ?? this.receivedCounterRanges,
+      retiredCounterNamespaces:
+          retiredCounterNamespaces ?? this.retiredCounterNamespaces,
     );
   }
 
@@ -191,11 +513,125 @@ class AndroidChatStore {
       'messages': messages.map((item) => item.toJson()).toList(),
       'groups': groups.map((item) => item.toJson()).toList(),
       'group_members': groupMembers.map((item) => item.toJson()).toList(),
+      'group_events': groupEvents
+          .map((item) => item.toPortableBackupJson())
+          .toList(),
       'next_message_counter': nextMessageCounter,
+      if (hasValidCounterLane) ...{
+        'counter_namespace': counterNamespace,
+        'counter_namespace_bits': counterNamespaceBits,
+        if (counterDeviceId != null && counterDeviceId!.trim().isNotEmpty)
+          'counter_device_id': counterDeviceId!.trim(),
+      },
+      if (receivedCounterRecipientKeyId != null &&
+          receivedCounterRecipientKeyId!.trim().isNotEmpty)
+        'received_counter_recipient_key_id': receivedCounterRecipientKeyId!
+            .trim(),
+      'received_counter_ranges': receivedCounterRanges
+          .map((sender) => sender.toJson())
+          .toList(),
     };
   }
 
   String toJsonString() => const JsonEncoder.withIndent('  ').convert(toJson());
+}
+
+Set<int> androidCounterNamespacesToExclude(Iterable<AndroidChatStore> stores) {
+  final result = <int>{};
+  for (final store in stores) {
+    result.addAll(
+      store.retiredCounterNamespaces.where(
+        (value) => value > 0 && value <= androidMessageCounterNamespaceMask,
+      ),
+    );
+    if (store.counterNamespace > 0 &&
+        store.counterNamespace <= androidMessageCounterNamespaceMask) {
+      result.add(store.counterNamespace);
+    }
+    final inferred = androidInferredCounterNamespace(
+      nextMessageCounter: store.nextMessageCounter,
+      counterNamespace: store.counterNamespace,
+      counterNamespaceBits: store.counterNamespaceBits,
+    );
+    if (inferred > 0) result.add(inferred);
+  }
+  return result;
+}
+
+AndroidChatStore androidPreparePortableBackupRestore({
+  required AndroidChatStore backupStore,
+  required AndroidChatStore currentCounterState,
+  required String recipientIdentityKeyId,
+  required int newCounterNamespace,
+  required String newCounterDeviceId,
+}) {
+  final recipientKeyId = recipientIdentityKeyId.trim();
+  if (recipientKeyId.isEmpty) {
+    throw const FormatException('portable backup recipient identity is empty');
+  }
+  final backupRecipient =
+      backupStore.receivedCounterRecipientKeyId?.trim() ?? '';
+  if (backupRecipient.isNotEmpty && backupRecipient != recipientKeyId) {
+    throw const FormatException(
+      'portable received counters belong to another recipient identity',
+    );
+  }
+  if (newCounterDeviceId.trim().isEmpty) {
+    throw const FormatException('new counter device id is empty');
+  }
+  final excluded = androidCounterNamespacesToExclude([
+    currentCounterState,
+    backupStore,
+  ]);
+  if (newCounterNamespace <= 0 ||
+      newCounterNamespace > androidMessageCounterNamespaceMask ||
+      excluded.contains(newCounterNamespace)) {
+    throw const FormatException(
+      'new counter namespace is invalid or belongs to an old endpoint',
+    );
+  }
+
+  final currentRecipient =
+      currentCounterState.receivedCounterRecipientKeyId?.trim() ?? '';
+  final sameCurrentIdentity = currentRecipient == recipientKeyId;
+  final backupSequence = androidMessageCounterSequence(
+    backupStore.nextMessageCounter,
+  );
+  final currentSequence = sameCurrentIdentity
+      ? androidMessageCounterSequence(currentCounterState.nextMessageCounter)
+      : 0;
+  final highWater = backupSequence > currentSequence
+      ? backupSequence
+      : currentSequence;
+  final nextSequence =
+      highWater <=
+          androidMaximumMessageCounterSequence -
+              androidPortableRestoreCounterReservation
+      ? (highWater + androidPortableRestoreCounterReservation)
+            .clamp(1, androidMaximumMessageCounterSequence)
+            .toInt()
+      : 1;
+  final mergedReceivedCounters = androidNormalizeReceivedCounterRanges([
+    if (sameCurrentIdentity) ...currentCounterState.receivedCounterRanges,
+    ...backupStore.receivedCounterRanges,
+  ]);
+  final retired = <int>{...excluded}..remove(newCounterNamespace);
+
+  return backupStore
+      .copyWith(
+        messages: const [],
+        nextMessageCounter: androidComposeMessageCounter(
+          nextSequence,
+          newCounterNamespace,
+        ),
+        counterNamespace: newCounterNamespace,
+        counterNamespaceBits: androidMessageCounterNamespaceBits,
+        counterDeviceId: newCounterDeviceId.trim(),
+        receivedCounterRecipientKeyId: recipientKeyId,
+        receivedCounterRanges: mergedReceivedCounters,
+        retiredCounterNamespaces: retired.toList(),
+      )
+      .normalized();
 }
 
 class AndroidContactRecord {
@@ -815,6 +1251,49 @@ class AndroidGroupEventRecord {
     );
   }
 
+  factory AndroidGroupEventRecord.fromPortableBackupJson(
+    Map<Object?, Object?> json,
+  ) {
+    final eventId = _requiredPortableGroupEventString(json, 'event_id');
+    final groupId = _requiredPortableGroupEventString(json, 'group_id');
+    final type = _requiredPortableGroupEventString(json, 'type');
+    final actorKeyId = _requiredPortableGroupEventString(json, 'actor_key_id');
+    final groupEpoch = json['group_epoch'];
+    final createdAtUnixMs = json['created_at_unix_ms'];
+    if (groupEpoch is! num ||
+        groupEpoch.toInt() != groupEpoch ||
+        groupEpoch.toInt() <= 0 ||
+        createdAtUnixMs is! num ||
+        createdAtUnixMs.toInt() != createdAtUnixMs ||
+        createdAtUnixMs.toInt() <= 0) {
+      throw const FormatException(
+        'portable group event epoch or timestamp is invalid',
+      );
+    }
+    final payloadValue = json['payload_json'];
+    if (payloadValue is! String || payloadValue.trim().isEmpty) {
+      throw const FormatException('portable group event payload_json is empty');
+    }
+    final payloadJson = payloadValue;
+    String signature = '';
+    try {
+      final payload = jsonDecode(payloadJson);
+      if (payload is Map) signature = payload['signature']?.toString() ?? '';
+    } catch (_) {
+      // The restore verifier reports the malformed signed payload.
+    }
+    return AndroidGroupEventRecord(
+      eventId: eventId,
+      groupId: groupId,
+      epoch: groupEpoch.toInt(),
+      type: type,
+      actorKeyId: actorKeyId,
+      createdAtUnixMs: createdAtUnixMs.toInt(),
+      payloadJson: payloadJson,
+      signature: signature,
+    );
+  }
+
   final String eventId;
   final String groupId;
   final int epoch;
@@ -836,6 +1315,103 @@ class AndroidGroupEventRecord {
       'signature': signature,
     };
   }
+
+  Map<String, Object?> toPortableBackupJson() {
+    return {
+      'event_id': eventId,
+      'group_id': groupId,
+      'type': type,
+      'actor_key_id': actorKeyId,
+      'group_epoch': epoch,
+      'created_at_unix_ms': createdAtUnixMs,
+      'payload_json': payloadJson,
+    };
+  }
+}
+
+String _requiredPortableGroupEventString(
+  Map<Object?, Object?> json,
+  String key,
+) {
+  final value = json[key];
+  if (value is! String || value.trim().isEmpty) {
+    throw FormatException('portable group event $key is empty');
+  }
+  return value.trim();
+}
+
+List<AndroidGroupEventRecord> androidNormalizePortableGroupEvents(
+  Iterable<AndroidGroupEventRecord> events,
+) {
+  final byId = <String, AndroidGroupEventRecord>{};
+  var inputCount = 0;
+  var payloadBytes = 0;
+  for (final event in events) {
+    inputCount += 1;
+    if (inputCount > androidMaximumPortableGroupEvents) {
+      throw const FormatException('portable backup has too many group events');
+    }
+    if (event.eventId.trim().isEmpty ||
+        event.groupId.trim().isEmpty ||
+        event.type.trim().isEmpty ||
+        event.actorKeyId.trim().isEmpty ||
+        event.epoch <= 0 ||
+        event.createdAtUnixMs <= 0 ||
+        event.payloadJson.trim().isEmpty) {
+      throw const FormatException('portable group event fields are incomplete');
+    }
+    final eventPayloadBytes = utf8.encode(event.payloadJson).length;
+    if (eventPayloadBytes > androidMaximumPortableGroupEventPayloadBytes) {
+      throw const FormatException('portable group event payload is too large');
+    }
+    payloadBytes += eventPayloadBytes;
+    if (payloadBytes > androidMaximumPortableGroupEventPayloadTotalBytes) {
+      throw const FormatException(
+        'portable group event payload total is too large',
+      );
+    }
+    final normalized = AndroidGroupEventRecord(
+      eventId: event.eventId.trim(),
+      groupId: event.groupId.trim(),
+      epoch: event.epoch,
+      type: event.type.trim(),
+      actorKeyId: event.actorKeyId.trim(),
+      createdAtUnixMs: event.createdAtUnixMs,
+      payloadJson: event.payloadJson,
+      signature: event.signature,
+    );
+    final existing = byId[normalized.eventId];
+    if (existing != null && !_samePortableGroupEvent(existing, normalized)) {
+      throw FormatException(
+        'portable group event id conflicts: ${normalized.eventId}',
+      );
+    }
+    byId[normalized.eventId] = normalized;
+  }
+  final result = byId.values.toList()
+    ..sort((left, right) {
+      final group = left.groupId.compareTo(right.groupId);
+      if (group != 0) return group;
+      final epoch = left.epoch.compareTo(right.epoch);
+      if (epoch != 0) return epoch;
+      final created = left.createdAtUnixMs.compareTo(right.createdAtUnixMs);
+      if (created != 0) return created;
+      return left.eventId.compareTo(right.eventId);
+    });
+  return List.unmodifiable(result);
+}
+
+bool _samePortableGroupEvent(
+  AndroidGroupEventRecord left,
+  AndroidGroupEventRecord right,
+) {
+  return left.eventId == right.eventId &&
+      left.groupId == right.groupId &&
+      left.epoch == right.epoch &&
+      left.type == right.type &&
+      left.actorKeyId == right.actorKeyId &&
+      left.createdAtUnixMs == right.createdAtUnixMs &&
+      left.payloadJson == right.payloadJson;
 }
 
 bool _jsonBool(Object? value, {required bool defaultValue}) {

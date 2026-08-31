@@ -57,6 +57,16 @@ const String _androidContactControlMime =
 const String _androidGroupConsensusEndorsementContext =
     'envelope/v1/group/consensus-endorsement';
 const String _androidGroupEventSignatureContext = 'envelope/v1/group/event';
+const Set<String> _androidSupportedPortableGroupEventTypes = {
+  'group_invite',
+  'group_message',
+  'member_accepted',
+  'member_endorsed',
+  'group_renamed',
+  'group_avatar_updated',
+  'member_removed',
+  'member_left',
+};
 const String _androidOfflineFileManifestMime =
     'application/vnd.westwardsoft.envelope.offline-file-manifest+json';
 const String _androidOfflineFileChunkMime =
@@ -1102,6 +1112,15 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
 
   Future<void> _clearAndroidIdentityAndChatStorageForReplacement() async {
     await _androidP2p.stop();
+    final existingIdentity =
+        _secureIdentity ??
+        (_secureStore.isSupported ? await _secureStore.readIdentity() : null);
+    final existingIdentityKeyId = existingIdentity?.keyId.trim() ?? '';
+    if (existingIdentityKeyId.isNotEmpty && AndroidDbStore.instance.isOpen) {
+      await AndroidDbStore.instance.bindLegacyReceivedCountersToIdentity(
+        existingIdentityKeyId,
+      );
+    }
     await _clearAndroidChatStorage(refresh: false);
     if (AndroidDbStore.instance.isOpen) {
       await AndroidDbStore.instance.close();
@@ -1301,6 +1320,24 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     return '$_androidLocalBackupFilePrefix$stamp.json';
   }
 
+  int _newAndroidCounterNamespace(Set<int> excluded) {
+    final random = Random.secure();
+    int value;
+    do {
+      value = (random.nextInt(1 << 16) << 16) | random.nextInt(1 << 16);
+    } while (value == 0 || excluded.contains(value));
+    return value;
+  }
+
+  String _newAndroidCounterDeviceId() {
+    final random = Random.secure();
+    final suffix = List.generate(
+      16,
+      (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+    ).join();
+    return 'android-$suffix';
+  }
+
   Map<String, Object?> _androidLocalBackupContents() => const {
     'contacts': true,
     'groups': true,
@@ -1308,6 +1345,122 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     'messages': false,
     'file_cache': false,
   };
+
+  AndroidChatStore _validateAndroidPortableGroupEvents(AndroidChatStore store) {
+    final groupsById = <String, AndroidGroupRecord>{};
+    for (final group in store.groups) {
+      if (groupsById.containsKey(group.groupId)) {
+        throw SecureStoreException('本地备份包含重复 group_id：${group.groupId}。');
+      }
+      groupsById[group.groupId] = group;
+    }
+    final currentMemberKeys = <String, Set<String>>{};
+    for (final member in store.groupMembers) {
+      currentMemberKeys
+          .putIfAbsent(member.groupId, () => <String>{})
+          .add(member.keyId);
+    }
+
+    final verifiedEvents = <AndroidGroupEventRecord>[];
+    for (final event in androidNormalizePortableGroupEvents(
+      store.groupEvents,
+    )) {
+      try {
+        final currentGroup = groupsById[event.groupId];
+        if (!_androidSupportedPortableGroupEventTypes.contains(event.type) ||
+            currentGroup == null ||
+            event.epoch > currentGroup.epoch ||
+            !(currentMemberKeys[event.groupId]?.contains(event.actorKeyId) ??
+                false)) {
+          throw const FormatException('group event metadata is invalid');
+        }
+        final decoded = jsonDecode(event.payloadJson);
+        if (decoded is! Map) {
+          throw const FormatException('group event payload is not an object');
+        }
+        final payload = decoded.cast<String, Object?>();
+        final version = payload['version'];
+        final createdAt = payload['created_at_unix_ms'];
+        final groupValue = payload['group'];
+        final membersValue = payload['members'];
+        if (version is! num ||
+            version.toInt() != version ||
+            version.toInt() != 1 ||
+            payload['event_id']?.toString() != event.eventId ||
+            payload['type']?.toString() != event.type ||
+            payload['actor_key_id']?.toString() != event.actorKeyId ||
+            createdAt is! num ||
+            createdAt.toInt() != createdAt ||
+            createdAt.toInt() != event.createdAtUnixMs ||
+            groupValue is! Map ||
+            membersValue is! List) {
+          throw const FormatException(
+            'group event payload does not match metadata',
+          );
+        }
+        final eventGroup = AndroidGroupRecord.fromJson(groupValue);
+        final payloadGroupEpoch = groupValue['epoch'];
+        if (eventGroup.groupId != event.groupId ||
+            payloadGroupEpoch is! num ||
+            payloadGroupEpoch.toInt() != payloadGroupEpoch ||
+            eventGroup.epoch != event.epoch) {
+          throw const FormatException(
+            'group event payload group does not match metadata',
+          );
+        }
+        AndroidGroupMemberRecord? historicalActor;
+        for (final memberValue in membersValue) {
+          if (memberValue is! Map) {
+            throw const FormatException('group event member is not an object');
+          }
+          final member = AndroidGroupMemberRecord.fromJson(memberValue);
+          if (member.groupId == event.groupId &&
+              member.keyId == event.actorKeyId) {
+            historicalActor ??= member;
+          }
+        }
+        if (historicalActor == null ||
+            historicalActor.contactJson.trim().isEmpty) {
+          throw const FormatException(
+            'group event payload has no actor contact',
+          );
+        }
+        final parsedActor = _nativeCore.parseContact(
+          historicalActor.contactJson,
+        );
+        if (parsedActor.keyId != event.actorKeyId) {
+          throw const FormatException(
+            'group event actor contact is mismatched',
+          );
+        }
+        _validateAndroidGroupControlSignature(
+          payload,
+          AndroidContactRecord(
+            keyId: parsedActor.keyId,
+            displayName: parsedActor.displayName,
+            contactJson: parsedActor.contactJson,
+          ),
+        );
+        verifiedEvents.add(
+          AndroidGroupEventRecord(
+            eventId: event.eventId,
+            groupId: event.groupId,
+            epoch: event.epoch,
+            type: event.type,
+            actorKeyId: event.actorKeyId,
+            createdAtUnixMs: event.createdAtUnixMs,
+            payloadJson: event.payloadJson,
+            signature: payload['signature']?.toString() ?? '',
+          ),
+        );
+      } catch (error) {
+        throw SecureStoreException(
+          '本地备份 group_event 校验失败：${event.eventId}。$error',
+        );
+      }
+    }
+    return store.copyWith(groupEvents: verifiedEvents).normalized();
+  }
 
   String _androidLocalBackupPayloadJson({
     required SecureIdentityRecord identity,
@@ -1337,7 +1490,14 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     required SecureIdentityRecord identity,
   }) async {
     final db = await _ensureAndroidDbStore();
-    final store = await db.exportLocalBackupStore();
+    var store = await db.exportLocalBackupStore(
+      recipientIdentityKeyId: identity.keyId,
+    );
+    store = _validateAndroidPortableGroupEvents(store);
+    final backupEnvelopeCounter = store.nextMessageCounter;
+    final nextCounter = androidAdvanceMessageCounter(backupEnvelopeCounter);
+    await db.setNextMessageCounter(nextCounter);
+    store = store.copyWith(nextMessageCounter: nextCounter);
     final plaintext = _androidLocalBackupPayloadJson(
       identity: identity,
       store: store,
@@ -1352,7 +1512,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       filename: _androidLocalBackupPayloadName,
       mime: _androidLocalBackupPayloadMime,
       payloadBytes: plaintextBytes,
-      messageCounter: DateTime.now().millisecondsSinceEpoch,
+      messageCounter: backupEnvelopeCounter,
     );
     final wrapper = <String, Object?>{
       'version': 2,
@@ -1626,9 +1786,18 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     if (storeJson is! Map) {
       throw const SecureStoreException('本地备份缺少联系人和群组数据。');
     }
-    final store = AndroidChatStore.fromJson(
+    var store = AndroidChatStore.fromJson(
       storeJson.cast<String, Object?>(),
     ).copyWith(messages: const []);
+    final replayRecipient = store.receivedCounterRecipientKeyId?.trim() ?? '';
+    if (replayRecipient.isNotEmpty &&
+        replayRecipient != effectiveRecovered.keyId) {
+      throw const SecureStoreException('本地备份的防重放状态属于另一个身份。');
+    }
+    store = store.copyWith(
+      receivedCounterRecipientKeyId: effectiveRecovered.keyId,
+    );
+    store = _validateAndroidPortableGroupEvents(store);
     final settingsJson = decoded['settings'];
     final settings = settingsJson is Map
         ? settingsJson.cast<Object?, Object?>()
@@ -1700,12 +1869,45 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
           backupJson: encryptedJson,
         );
 
+        final currentDb = await _ensureAndroidDbStore();
+        var currentCounterState = await currentDb.getCounterLaneState();
+        final currentIdentity =
+            _secureIdentity ?? await _secureStore.readIdentity();
+        final currentIdentityKeyId = currentIdentity?.keyId.trim() ?? '';
+        if (currentIdentityKeyId.isNotEmpty) {
+          await currentDb.bindLegacyReceivedCountersToIdentity(
+            currentIdentityKeyId,
+          );
+          currentCounterState = currentCounterState.copyWith(
+            receivedCounterRecipientKeyId: currentIdentityKeyId,
+            receivedCounterRanges: await currentDb.getReceivedCounterRanges(
+              currentIdentityKeyId,
+            ),
+          );
+        }
+        final excludedCounterNamespaces = androidCounterNamespacesToExclude([
+          currentCounterState,
+          backup.store,
+        ]);
+        final restoredStore = androidPreparePortableBackupRestore(
+          backupStore: backup.store,
+          currentCounterState: currentCounterState,
+          recipientIdentityKeyId: backup.recovered.keyId,
+          newCounterNamespace: _newAndroidCounterNamespace(
+            excludedCounterNamespaces,
+          ),
+          newCounterDeviceId: _newAndroidCounterDeviceId(),
+        );
+
         await _clearAndroidIdentityAndChatStorageForReplacement();
         final record = await _secureStore.writeIdentity(
           backup.recovered.identityJson,
         );
         final db = await _ensureAndroidDbStore();
-        await db.importLocalBackupStore(backup.store);
+        await db.importLocalBackupStore(
+          restoredStore,
+          recipientIdentityKeyId: backup.recovered.keyId,
+        );
         if (backup.syncServiceUrl.isEmpty) {
           await _secureStore.writeSyncServiceUrl('');
           _envelopeServerUrlController.clear();
@@ -1798,6 +2000,10 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     if (!_secureStore.isSupported) return;
     try {
       final db = await _ensureAndroidDbStore();
+      final identityKeyId = _secureIdentity?.keyId.trim() ?? '';
+      if (identityKeyId.isNotEmpty) {
+        await db.bindLegacyReceivedCountersToIdentity(identityKeyId);
+      }
       final contacts = await db.getContacts();
       var groups = await db.getGroups();
       final groupMembers = await db.getGroupMembers();
@@ -3717,7 +3923,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
           payload: payload,
           messageCounter: counter,
         );
-        counter = envelope.messageCounter + 1;
+        counter = androidAdvanceMessageCounter(envelope.messageCounter);
         final status = await _deliverAndroidOpaqueEnvelopeToContact(
           contact: invitee,
           envelopeId: envelope.envelopeId,
@@ -3784,7 +3990,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         messageCounter: counter,
       );
       firstEnvelopeId ??= envelope.envelopeId;
-      counter = envelope.messageCounter + 1;
+      counter = androidAdvanceMessageCounter(envelope.messageCounter);
       jobs.add(() async {
         try {
           final status = await _deliverAndroidOpaqueEnvelopeToContact(
@@ -3905,7 +4111,10 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       memberIndex += 1
     ) {
       final member = recipients[memberIndex];
-      final memberCounterStart = baseCounter + memberIndex * envelopesPerMember;
+      final memberCounterStart = androidAdvanceMessageCounter(
+        baseCounter,
+        memberIndex * envelopesPerMember,
+      );
       jobs.add(() async {
         final contact = member.toContactRecord();
         var memberCounter = memberCounterStart;
@@ -3960,7 +4169,9 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
               messageCounter: memberCounter,
             );
             memberFirstEnvelopeId ??= outboundChunk.envelopeId;
-            memberCounter = outboundChunk.messageCounter + 1;
+            memberCounter = androidAdvanceMessageCounter(
+              outboundChunk.messageCounter,
+            );
             memberEnvelopes.add(
               _AndroidEnvelopeToSend(
                 envelopeId: outboundChunk.envelopeId,
@@ -4007,7 +4218,10 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         }
       });
     }
-    counter = baseCounter + recipients.length * envelopesPerMember;
+    counter = androidAdvanceMessageCounter(
+      baseCounter,
+      recipients.length * envelopesPerMember,
+    );
     final deliveryResults = await _runAndroidLimitedConcurrency(
       jobs,
       concurrency: _androidGroupFileDeliveryConcurrency,
@@ -4078,7 +4292,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         payload: payload,
         messageCounter: counter,
       );
-      counter = envelope.messageCounter + 1;
+      counter = androidAdvanceMessageCounter(envelope.messageCounter);
       jobs.add(() async {
         try {
           final status = await _deliverAndroidOpaqueEnvelopeToContact(
@@ -5782,7 +5996,9 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         ),
         messageCounter: messageCounter,
       );
-      await db.setNextMessageCounter(envelope.messageCounter + 1);
+      await db.setNextMessageCounter(
+        androidAdvanceMessageCounter(envelope.messageCounter),
+      );
       delivery = await _deliverAndroidOpaqueEnvelopeToContact(
         contact: current,
         envelopeId: envelope.envelopeId,
@@ -5849,7 +6065,9 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       deliveryStatus: AndroidDeliveryStatus.created,
     );
     await db.addMessage(message);
-    await db.setNextMessageCounter(outbound.messageCounter + 1);
+    await db.setNextMessageCounter(
+      androidAdvanceMessageCounter(outbound.messageCounter),
+    );
     await _refreshAndroidChatStore();
     return message;
   }
@@ -6091,7 +6309,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         filename: '$fileName.part${index.toString().padLeft(4, '0')}',
         mime: _androidFileChunkMime,
         payloadBytes: Uint8List.fromList(utf8.encode(jsonEncode(chunkPayload))),
-        messageCounter: messageCounter + 1 + index,
+        messageCounter: androidAdvanceMessageCounter(messageCounter, index + 1),
       );
       await db.saveOutgoingFileTransferChunk(
         transferId: transferId,
@@ -6103,7 +6321,9 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       );
     }
     await db.addMessage(message);
-    await db.setNextMessageCounter(messageCounter + chunkCount + 1);
+    await db.setNextMessageCounter(
+      androidAdvanceMessageCounter(messageCounter, chunkCount + 1),
+    );
     await _refreshAndroidChatStore();
     return message;
   }
@@ -7349,7 +7569,9 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       text: normalizedText,
       messageCounter: messageCounter,
     );
-    await db.setNextMessageCounter(outbound.messageCounter + 1);
+    await db.setNextMessageCounter(
+      androidAdvanceMessageCounter(outbound.messageCounter),
+    );
     final envelopeBytes = outbound.envelopeBytes;
     final file = await _writeAndroidOfflineEnvelopeFile(envelopeBytes);
     final savedPath = _androidSavedFileDisplayPath(file);
@@ -7465,7 +7687,10 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
           filename: '$transferId.part${index.toString().padLeft(6, '0')}',
           mime: _androidOfflineFileChunkMime,
           payloadBytes: chunkBytes,
-          messageCounter: messageCounter + 1 + index,
+          messageCounter: androidAdvanceMessageCounter(
+            messageCounter,
+            index + 1,
+          ),
         );
         writtenBytes += await _appendAndroidSavedFileAscii(
           file,
@@ -7476,7 +7701,9 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         file: file,
         bytes: writtenBytes,
       );
-      await db.setNextMessageCounter(messageCounter + chunkCount + 1);
+      await db.setNextMessageCounter(
+        androidAdvanceMessageCounter(messageCounter, chunkCount + 1),
+      );
       final savedPath = _androidSavedFileDisplayPath(sealedFile);
       final record = AndroidSealedEnvelopeRecord(
         envelopeId: outbound.envelopeId,
@@ -7953,7 +8180,10 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         attachmentPath: savedPath,
         attachmentMime: finishedFile.mime,
       );
-      final inserted = await db.addMessage(message);
+      final inserted = await db.addMessage(
+        message,
+        recipientIdentityKeyId: _requireAndroidIdentity().keyId,
+      );
       final savedMessage = inserted
           ? message
           : (await db.getMessage(message.envelopeId)) ?? message;
@@ -8178,7 +8408,10 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
           attachmentPath: savedPath,
           attachmentMime: finishedFile!.mime,
         );
-        final inserted = await db.addMessage(message);
+        final inserted = await db.addMessage(
+          message,
+          recipientIdentityKeyId: _requireAndroidIdentity().keyId,
+        );
         final savedMessage = inserted
             ? message
             : (await db.getMessage(message.envelopeId)) ?? message;
@@ -8438,7 +8671,10 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       attachmentPath: content.attachmentPath,
       attachmentMime: content.attachmentMime,
     );
-    final inserted = await db.addMessage(message);
+    final inserted = await db.addMessage(
+      message,
+      recipientIdentityKeyId: _requireAndroidIdentity().keyId,
+    );
     final savedMessage = inserted
         ? message
         : (await db.getMessage(message.envelopeId)) ?? message;
@@ -8692,7 +8928,10 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         text: text,
         opaqueEnvelopeBase64: normalizedEnvelopeBase64,
       );
-      final inserted = await db.addMessage(message);
+      final inserted = await db.addMessage(
+        message,
+        recipientIdentityKeyId: _requireAndroidIdentity().keyId,
+      );
       final savedMessage = inserted
           ? message
           : (await db.getMessage(message.envelopeId)) ?? message;
@@ -8754,7 +8993,10 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         groupId: storedGroup.groupId,
       ),
     );
-    final inserted = await db.addMessage(eventMessage);
+    final inserted = await db.addMessage(
+      eventMessage,
+      recipientIdentityKeyId: _requireAndroidIdentity().keyId,
+    );
     final savedEventMessage = inserted
         ? eventMessage
         : (await db.getMessage(eventMessage.envelopeId)) ?? eventMessage;
@@ -9108,7 +9350,10 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       attachmentPath: savedPath,
       attachmentMime: savedFile.mime,
     );
-    final inserted = await db.addMessage(message);
+    final inserted = await db.addMessage(
+      message,
+      recipientIdentityKeyId: _requireAndroidIdentity().keyId,
+    );
     final savedMessage = inserted
         ? message
         : (await db.getMessage(message.envelopeId)) ?? message;

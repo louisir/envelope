@@ -29,6 +29,14 @@ Thumbs.db
 **/coverage/
 **/doc/api/
 
+# .NET / WPF
+**/bin/
+**/obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
 # Android / Gradle local state
 **/.gradle/
 **/.kotlin/

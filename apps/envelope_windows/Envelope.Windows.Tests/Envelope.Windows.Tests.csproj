@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Envelope.Windows.Core\Envelope.Windows.Core.csproj" />
+    <Compile Include="..\Envelope.Windows\Services\IntroPayloadCodec.cs"
+             Link="Shared\IntroPayloadCodec.cs" />
+    <Compile Include="..\Envelope.Windows\Services\LocalUnlockCoordinator.cs"
+             Link="Shared\LocalUnlockCoordinator.cs" />
+    <Compile Include="..\Envelope.Windows\Services\QrCodeService.cs"
+             Link="Shared\QrCodeService.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="QRCoder" Version="1.6.0" />
+    <PackageReference Include="ZXing.Net" Version="0.16.11" />
+    <Using Include="System.IO" />
+    <Using Include="System.Net.Http" />
+  </ItemGroup>
+
+</Project>

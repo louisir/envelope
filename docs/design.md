@@ -1,43 +1,44 @@
 # Envelope 当前设计文档 / Current Design Document
 
-本文是 Envelope 仓库的单一设计基线，对齐当前 Android 客户端、Rust core / FFI、Envelope Server 和部署脚本的实现状态。历史阶段文档已合并到本文，不再作为独立维护对象。
+本文是 Envelope 仓库的单一设计基线，对齐当前 Android 客户端、Windows WPF 客户端、Rust core / FFI、Envelope Server 和部署脚本的实现状态。历史阶段文档已合并到本文，不再作为独立维护对象。
 
-This document is the single design baseline for the Envelope repository. It reflects the current Android client, Rust core / FFI, Envelope Server, and deployment scripts. Historical phase documents have been merged here and are no longer maintained separately.
+This document is the single design baseline for the Envelope repository. It reflects the current Android client, Windows WPF client, Rust core / FFI, Envelope Server, and deployment scripts. Historical phase documents have been merged here and are no longer maintained separately.
 
-最后更新 / Last updated: 2026-07-07
+最后更新 / Last updated: 2026-08-12
 
 ## 1. 产品定位 / Product Scope
 
-Envelope 是一个以 Android 为主的端到端加密通信项目。消息、文件和群组控制事件都被编码为 opaque 加密信封。客户端负责身份、联系人、加密、解密、本地数据库和用户确认；Envelope Server 只负责路由、mailbox 兜底、intro session、送达回执、节点清单和节点间 best-effort 同步。
+Envelope 是一个面向 Android 和 Windows 的端到端加密通信项目。消息、文件和群组控制事件都被编码为 opaque 加密信封。客户端负责身份、联系人、加密、解密、本地加密状态和用户确认；Envelope Server 只负责路由、mailbox 兜底、intro session、送达回执、节点清单和节点间 best-effort 同步。
 
-Envelope is an Android-first end-to-end encrypted communication project. Messages, files, and group control events are encoded as opaque encrypted envelopes. The client owns identity, contacts, encryption, decryption, the local database, and user confirmation. Envelope Server only provides routing, mailbox fallback, intro sessions, delivery receipts, node manifests, and best-effort node sync.
+Envelope is an end-to-end encrypted communication project for Android and Windows. Messages, files, and group control events are encoded as opaque encrypted envelopes. The client owns identity, contacts, encryption, decryption, encrypted local state, and user confirmation. Envelope Server only provides routing, mailbox fallback, intro sessions, delivery receipts, node manifests, and best-effort node sync.
 
 服务器和外部工具或渠道不能解密消息内容。服务端不解析信封内部的明文元数据，也不应成为联系人信任或群成员身份确认的来源。
 
 Servers and external tools or channels cannot decrypt message content. The server does not parse plaintext metadata inside envelopes and must not be the source of contact trust or group-member identity confirmation.
 
-当前主产品形态是 Android 客户端。桌面端仍是开发验证 shell，不作为当前用户主线。
+当前仓库包含 Android 正式客户端和 Windows WPF 客户端；两者使用相同的 Contact、IntroBundle、opaque envelope、群组控制和服务端协议。Windows 不是开发 CLI 代理，也不会把裸 Identity JSON 作为生产存储。
 
-The Android client is the primary product surface. The desktop app remains a development verification shell and is not the current user-facing path.
+The repository contains the Android production client and the Windows WPF client. They share Contact, IntroBundle, opaque-envelope, group-control, and server protocols. Windows is not a development CLI proxy and does not use raw Identity JSON as its production storage format.
 
 ## 2. 当前功能边界 / Current Functional Boundaries
 
 ### 已实现 / Implemented
 
 - Android 五个主入口：关于、联系人、聊天、拆封、设置。 / Five Android entry points: About, Contacts, Chat, Open, and Settings.
+- Windows WPF 五个主入口：关于、联系人、聊天、拆封、设置；包含中英文资源和系统/浅色/深色主题。 / Five Windows WPF entry points: About, Contacts, Chat, Open, and Settings, with Chinese/English resources and system/light/dark themes.
 - Android Keystore 保护 SQLCipher 数据库口令，本机身份存放于加密数据库。 / Android Keystore protects the SQLCipher database passphrase; the local identity is stored in the encrypted database.
 - BIP39 24 词身份创建和身份恢复。 / BIP39 24-word identity creation and recovery.
 - 本地锁屏：打开 App 和高风险操作可使用系统 PIN、密码或生物识别确认。 / Local lock: opening the app and sensitive actions can require system PIN, password, or biometrics.
 - 本地备份：用 24 词加密导出显示名、身份 key id、同步服务入口、联系人、群组和群成员。 / Local backup: the 24-word phrase encrypts display name, identity key id, sync service entry, contacts, groups, and group members.
-- 二维码联系人交换、剪贴板 contact 导入和 fingerprint 人工确认。 / QR contact exchange, clipboard contact import, and manual fingerprint confirmation.
+- Android / Windows 二维码交换（Windows 生成二维码并读取二维码图片）、剪贴板载荷、短期 intro-session 双向回传，以及保存前 fingerprint 人工确认。 / Android / Windows QR exchange (Windows generation and QR-image decoding), clipboard payloads, short-lived intro-session mutual return, and manual fingerprint confirmation before saving.
 - 联系人备注、联系人删除和端到端加密 contact-control 删除通知。 / Contact notes, contact deletion, and end-to-end encrypted contact-control deletion notices.
 - 点对点文本和文件发送。 / One-to-one text and file sending.
 - 图片、视频文件预览；文件点击优先调用系统默认应用打开，失败时退回保存路径。 / Image and video previews; file taps prefer the system default app and fall back to the saved location.
 - 聊天记录分页、消息多选和本机删除。 / Chat history paging, multi-select, and local deletion.
 - 64 MiB 内在线文件发送，客户端分片、哈希校验和逐信封加密。 / Online file sending up to 64 MiB, with client chunking, hash verification, and per-envelope encryption.
-- 点对点离线密封和拆封，支持文本和本地文件。 / One-to-one offline sealing and opening for text and local files.
+- 点对点及群组离线密封和拆封，支持文本和本地文件；群组使用逐成员密文流。 / One-to-one and group offline sealing/opening for text and local files, with per-recipient ciphertext streams for groups.
 - 普通群、验证群、共识群。 / Normal groups, verified groups, and consensus groups.
-- 群邀请以邀请者单聊消息呈现，受邀者可接受或拒绝。 / Group invitations appear in the inviter's one-to-one chat; invitees can accept or decline.
+- 群邀请在 Android 的邀请者单聊或 Windows 的待处理群会话中呈现，受邀者可接受或拒绝。 / Group invitations appear in the inviter chat on Android or a pending group conversation on Windows; invitees can accept or decline.
 - 建群最少 3 人：群主加至少 2 名受邀者。 / Group creation requires at least 3 people: the owner plus at least 2 invitees.
 - 群主改群名、更新群头像 seed、邀请成员、移除成员。 / Group owner actions: rename, update avatar seed, invite members, and remove members.
 - 群成员状态：pending、accepted、active、left、removed。 / Group member states: pending, accepted, active, left, and removed.
@@ -50,15 +51,15 @@ The Android client is the primary product surface. The desktop app remains a dev
 - 服务端 route、mailbox、delivery receipt、ACK tombstone 的 best-effort 节点同步。 / Best-effort server node sync for routes, mailbox items, delivery receipts, and ACK tombstones.
 - 客户端 replay / message counter 检测。 / Client replay / message counter detection.
 - 客户端诊断日志导出和清空。 / Client diagnostic log export and clearing.
-- 关于页显示版本、APK 签名指纹、用户手册、源代码仓库和许可证。 / About page shows version, APK signing fingerprint, user manual, source repository, and license.
+- 关于页显示版本、平台发布校验值（Android APK 签名指纹或 Windows 可执行文件 SHA-256）、用户手册、源代码仓库和许可证。 / About shows version, the platform release verification value (Android APK signing fingerprint or Windows executable SHA-256), manual, source repository, and license.
 - Android release APK 签名和 update manifest 生成。 / Android release APK signing and update manifest generation.
+- Windows x64 Release 构建、协议验证 harness、FFI DLL 组合、可执行文件 SHA-256 和 zip 打包。 / Windows x64 Release build, protocol verification harness, FFI DLL composition, executable SHA-256, and zip packaging.
 
 ### 当前不承诺 / Not Currently Promised
 
 - mailbox 跨节点强一致多副本存储。 / Strongly consistent replicated mailbox storage across nodes.
 - MLS 或共享群密钥。 / MLS or shared group keys.
 - 多 active messaging device 同步。 / Multiple active messaging device sync.
-- 群离线密封。 / Group offline sealing.
 - 在线 WebSocket relay、TURN、音视频。 / Online WebSocket relay, TURN, audio, or video.
 - 服务器找回身份、联系人或消息。 / Server-side recovery of identities, contacts, or messages.
 - 通过 24 词自动恢复联系人、群组或聊天记录。 / Automatic contact, group, or chat-history recovery from the 24-word phrase alone.
@@ -136,6 +137,26 @@ Flutter UI
                    Identity, security, sync service, local backup, cache, diagnostics
 ```
 
+### 3.1 Windows WPF 客户端结构 / Windows WPF Client Structure
+
+Windows 客户端位于 `apps/envelope_windows`，使用 .NET 8、C#、WPF 和 MVVM。它直接调用同一份 `envelope_ffi.dll`，没有通过 Android、Flutter 或开发 CLI 代理密码学操作。
+
+The Windows client lives under `apps/envelope_windows` and uses .NET 8, C#, WPF, and MVVM. It calls the same `envelope_ffi.dll` directly; cryptographic operations are not proxied through Android, Flutter, or a development CLI.
+
+```text
+WPF pages / MVVM
+  -> EnvelopeClientEngine
+    -> envelope_ffi.dll -> envelope-core
+    -> DPAPI CurrentUser protected AES-256-GCM state slots
+    -> Envelope Server HTTP client and signed node verification
+    -> native TCP P2P listener with 4-byte big-endian framing
+    -> received / sealed / backups / diagnostics file services
+```
+
+Windows 与 Android 保持五页信息架构。Windows 可显示真实二维码，并从 PNG、JPEG、BMP、GIF 或 TIFF 图片读取签名 Contact / IntroBundle；也保留剪贴板文本入口。版本 2 载荷可通过 Envelope Server 的短期 intro session 把 Windows 的签名 bundle 回传给出示方，实现双方确认后的互加。两端保存前都明确要求人工核对 fingerprint；二维码、文本载体和 intro server 都不被当作现实身份认证。
+
+Windows preserves the Android five-page information architecture. It displays real QR codes and decodes signed Contact / IntroBundle data from PNG, JPEG, BMP, GIF, or TIFF images, while retaining a clipboard-text path. A version-2 payload can return the Windows signed bundle through a short-lived Envelope Server intro session for mutually confirmed contact exchange. Both endpoints still require manual fingerprint comparison before saving; QR images, text carriers, and the intro server are not treated as proof of real-world identity.
+
 ## 4. 身份和恢复 / Identity and Recovery
 
 身份由 Rust core 生成。BIP39 24 词恢复词派生长期身份密钥。恢复词不会直接作为私钥使用，而是通过固定 KDF 和 context 派生用途不同的密钥。
@@ -152,10 +173,11 @@ Identities are generated by Rust core. The BIP39 24-word recovery phrase derives
 本地备份语义 / Local backup semantics:
 
 - 备份使用 24 词派生的本地备份密钥加密。 / Backups are encrypted with a local backup key derived from the 24-word phrase.
-- 备份内容包含显示名、身份 key id、同步服务入口、联系人、群组和群成员。 / Backup content includes display name, identity key id, sync service entry, contacts, groups, and group members.
+- 备份内容包含显示名、身份 key id、同步服务入口、联系人、群组、群成员、有界签名群事件历史，以及按发送者压缩的 anti-replay counter ranges。 / Backup content includes display name, identity key id, sync service entry, contacts, groups, group members, bounded signed group-event history, and sender-compressed anti-replay counter ranges.
 - 当前备份不包含聊天记录，不包含 received / sealed 文件缓存。 / Current backups do not include chat history or the received / sealed file cache.
-- 恢复本地备份会替换当前本机使用现场。 / Restoring a local backup replaces the current local usage state.
+- 恢复本地备份会替换当前本机使用现场，并为新 active endpoint 轮换 message-counter namespace；旧 endpoint 必须停止投递。 / Restoring a local backup replaces the current local usage state and rotates the message-counter namespace for the new active endpoint; the previous endpoint must stop delivering messages.
 - 恢复时必须验证 24 词恢复出的 key id 与备份身份匹配。 / Restore must verify that the phrase-derived key id matches the backup identity.
+- Windows Hello 本地锁及 verified-group fingerprint 信任是设备本地策略，不从 portable backup 覆盖。 / Windows Hello local lock and verified-group fingerprint trust are device-local policies and are not overwritten by a portable backup.
 
 ## 5. 本地存储 / Local Storage
 
@@ -176,6 +198,10 @@ group_events
 received_message_counters
 ```
 
+Windows 生产存储位于 `%LOCALAPPDATA%\Envelope`。首次运行生成随机 256-bit 主密钥，并用当前 Windows 账户的 DPAPI CurrentUser 保护；每个状态槽独立使用 AES-256-GCM 加密，槽名作为 AAD，文件替换、调包或篡改会在解密时失败。身份、联系人、消息、群组、计数器、待投递项和设置只写入加密状态，不落裸 JSON 私钥。
+
+Windows production storage lives under `%LOCALAPPDATA%\Envelope`. First run generates a random 256-bit master key protected with DPAPI CurrentUser for the current Windows account. Each state slot is independently encrypted with AES-256-GCM and binds its slot name as AAD, so replacement, swapping, or tampering fails authentication. Identity, contacts, messages, groups, counters, pending deliveries, and settings are only written to encrypted state; raw private Identity JSON is not used as a persisted production format.
+
 文件保存策略 / File saving policy:
 
 - 接收文件保存到 `Download/Envelope/received`。 / Received files are saved under `Download/Envelope/received`.
@@ -183,6 +209,8 @@ received_message_counters
 - 本地备份保存到 `Download/Envelope/backups`。 / Local backups are saved under `Download/Envelope/backups`.
 - 诊断日志导出到 `Download/Envelope/diagnostics`。 / Diagnostic logs are exported to `Download/Envelope/diagnostics`.
 - 清空文件缓存只删除 received 和 sealed，并将对应记录标记为文件已删除。 / Clearing file cache only deletes received and sealed files and marks related records as file-deleted.
+
+Windows 对应的用户可见根目录为 `%USERPROFILE%\Downloads\Envelope`，使用相同的 `received`、`sealed`、`backups` 和 `diagnostics` 子目录语义。 / The corresponding Windows user-visible root is `%USERPROFILE%\Downloads\Envelope`, with the same `received`, `sealed`, `backups`, and `diagnostics` subdirectory semantics.
 
 ## 6. 联系人和 IntroBundle / Contacts and IntroBundle
 
@@ -254,20 +282,20 @@ received        本机收到并入库 / received and stored locally
 
 ## 8. 离线密封和拆封 / Offline Sealing and Opening
 
-离线密封只支持点对点，不支持群组。
+离线密封支持点对点和群组。点对点使用单体文本信封或 `ENVELOPE_STREAM_V1` 文件流；群组使用 `ENVELOPE_GROUP_STREAM_V1`，为每位当前可投递成员写入独立 opaque envelope，不引入共享群密钥。
 
-Offline sealing only supports one-to-one delivery, not groups.
+Offline sealing supports one-to-one and group delivery. One-to-one uses a single text envelope or an `ENVELOPE_STREAM_V1` file stream. Groups use `ENVELOPE_GROUP_STREAM_V1`, writing an independent opaque envelope for every currently eligible recipient without introducing a shared group key.
 
 密封语义 / Sealing semantics:
 
-- 发送方选择一个联系人。 / The sender selects one contact.
-- 文本或文件会加密包装成只供该联系人解密的离线信封文件。 / Text or file content is encrypted into an offline envelope file that only the selected contact can decrypt.
+- 发送方选择联系人或群组。 / The sender selects a contact or group.
+- 点对点内容只供该联系人解密；群内容按当前群策略和本机信任筛选收件成员，再逐一加密。 / One-to-one content is decryptable only by that contact; group recipients are filtered by current policy and local trust, then encrypted separately.
 - 输出文件由用户自行通过邮箱、网盘、U 盘等外部工具或渠道转交。 / The output file is transferred by the user through external tools or channels such as email, cloud drive, or USB drive.
 - 外部工具或渠道只搬运密文。 / External tools or channels only carry ciphertext.
 
 拆封语义 / Opening semantics:
 
-- 接收方从文件或 base64 导入离线信封。 / The receiver imports an offline envelope from file or base64.
+- 接收方从文件或 base64 导入点对点信封；群组流从文件导入并跳过发给其他成员的密文行。 / The receiver imports a one-to-one envelope from file or base64; a group stream is imported from file while ciphertext lines for other members are skipped.
 - 本机使用已有身份尝试解密。 / The local device attempts decryption with the existing identity.
 - 解密成功后写入聊天记录。 / On successful decryption, the result is written to chat history.
 - 大文件拆封使用流式容器，避免一次性读入完整文件。 / Large-file opening uses a streaming container to avoid loading the full file at once.
@@ -472,8 +500,9 @@ The repository `docs/` directory keeps only:
 ```text
 docs/design.md
 docs/android-user-manual.html
+docs/windows-user-manual.html
 ```
 
-新增设计内容先合并进本文。面向用户的操作变化同步更新 Android 用户手册。阶段计划、调试记录和部署过程不再放入 `docs/`，避免公开文档出现过期功能或内部运维细节。
+新增设计内容先合并进本文。面向用户的操作变化同步更新对应的 Android 或 Windows 用户手册。阶段计划、调试记录和部署过程不再放入 `docs/`，避免公开文档出现过期功能或内部运维细节。
 
-New design content should be merged into this document first. User-facing behavior changes should also update the Android user manual. Phase plans, debug notes, and deployment process notes should not be placed under `docs/`, keeping public documentation free of stale behavior and internal operations details.
+New design content should be merged into this document first. User-facing behavior changes should also update the corresponding Android or Windows user manual. Phase plans, debug notes, and deployment process notes should not be placed under `docs/`, keeping public documentation free of stale behavior and internal operations details.

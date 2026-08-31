@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:envelope_app/android_chat_store.dart';
 
@@ -63,6 +65,255 @@ void main() {
       'newer',
     ]);
     expect(store.nextMessageCounter, 1);
+    expect(store.counterNamespace, 0);
+    expect(store.receivedCounterRanges, isEmpty);
+  });
+
+  test('portable Windows counter metadata and replay ranges round trip', () {
+    const windowsNamespace = 0x12345678;
+    final windowsNextCounter = androidComposeMessageCounter(
+      250,
+      windowsNamespace,
+    );
+    final imported = AndroidChatStore.fromJson({
+      'version': 1,
+      'contacts': const [],
+      'messages': const [],
+      'groups': const [],
+      'group_members': const [],
+      'next_message_counter': windowsNextCounter,
+      'counter_namespace': windowsNamespace,
+      'counter_namespace_bits': 32,
+      'counter_device_id': 'windows-endpoint-a',
+      'received_counter_ranges': [
+        {
+          'sender_key_id': 'bob-key',
+          'ranges': [
+            [7, 9],
+            [12, 12],
+          ],
+        },
+      ],
+    });
+
+    expect(imported.hasValidCounterLane, isTrue);
+    expect(imported.receivedCounterRanges.single.counterCount, 4);
+
+    final androidWire = imported
+        .copyWith(receivedCounterRecipientKeyId: 'alice-key')
+        .toJson();
+    final reimported = AndroidChatStore.fromJson(androidWire);
+    expect(reimported.nextMessageCounter, windowsNextCounter);
+    expect(reimported.counterNamespace, windowsNamespace);
+    expect(reimported.counterNamespaceBits, 32);
+    expect(reimported.counterDeviceId, 'windows-endpoint-a');
+    expect(reimported.receivedCounterRecipientKeyId, 'alice-key');
+    expect(
+      reimported.receivedCounterRanges.single.ranges.map(
+        (range) => range.toJson(),
+      ),
+      [
+        [7, 9],
+        [12, 12],
+      ],
+    );
+  });
+
+  test(
+    'portable restore rotates lane and merges same-identity replay ranges',
+    () {
+      const backupNamespace = 0x10203040;
+      const currentNamespace = 0x50607080;
+      const newNamespace = 0x11223344;
+      final backup = AndroidChatStore.empty().copyWith(
+        nextMessageCounter: androidComposeMessageCounter(250, backupNamespace),
+        counterNamespace: backupNamespace,
+        counterNamespaceBits: androidMessageCounterNamespaceBits,
+        counterDeviceId: 'windows-endpoint',
+        receivedCounterRecipientKeyId: 'alice-key',
+        receivedCounterRanges: const [
+          AndroidReceivedCounterRanges(
+            senderKeyId: 'bob-key',
+            ranges: [AndroidReceivedCounterRange(7, 9)],
+          ),
+        ],
+      );
+      final current = AndroidChatStore.empty().copyWith(
+        nextMessageCounter: androidComposeMessageCounter(300, currentNamespace),
+        counterNamespace: currentNamespace,
+        counterNamespaceBits: androidMessageCounterNamespaceBits,
+        counterDeviceId: 'android-old-endpoint',
+        receivedCounterRecipientKeyId: 'alice-key',
+        receivedCounterRanges: const [
+          AndroidReceivedCounterRanges(
+            senderKeyId: 'bob-key',
+            ranges: [AndroidReceivedCounterRange(9, 11)],
+          ),
+        ],
+      );
+
+      final restored = androidPreparePortableBackupRestore(
+        backupStore: backup,
+        currentCounterState: current,
+        recipientIdentityKeyId: 'alice-key',
+        newCounterNamespace: newNamespace,
+        newCounterDeviceId: 'android-new-endpoint',
+      );
+
+      expect(restored.hasValidCounterLane, isTrue);
+      expect(restored.counterNamespace, newNamespace);
+      expect(restored.counterDeviceId, 'android-new-endpoint');
+      expect(
+        androidMessageCounterSequence(restored.nextMessageCounter),
+        300 + androidPortableRestoreCounterReservation,
+      );
+      expect(
+        restored.retiredCounterNamespaces,
+        containsAll([backupNamespace, currentNamespace]),
+      );
+      expect(restored.receivedCounterRanges.single.ranges.single.toJson(), [
+        7,
+        11,
+      ]);
+    },
+  );
+
+  test('metadata-free re-exported Windows high-water rotates safely', () {
+    const lostWindowsNamespace = 0x13572468;
+    const freshAndroidNamespace = 0x24681357;
+    final metadataFree = AndroidChatStore.fromJson({
+      'contacts': const [],
+      'messages': const [],
+      'groups': const [],
+      'group_members': const [],
+      'next_message_counter': androidComposeMessageCounter(
+        42,
+        lostWindowsNamespace,
+      ),
+    }).copyWith(receivedCounterRecipientKeyId: 'alice-key');
+
+    expect(metadataFree.hasValidCounterLane, isFalse);
+    expect(
+      androidInferredCounterNamespace(
+        nextMessageCounter: metadataFree.nextMessageCounter,
+        counterNamespace: metadataFree.counterNamespace,
+        counterNamespaceBits: metadataFree.counterNamespaceBits,
+      ),
+      lostWindowsNamespace,
+    );
+
+    final restored = androidPreparePortableBackupRestore(
+      backupStore: metadataFree,
+      currentCounterState: AndroidChatStore.empty(),
+      recipientIdentityKeyId: 'alice-key',
+      newCounterNamespace: freshAndroidNamespace,
+      newCounterDeviceId: 'android-new-endpoint',
+    );
+    expect(restored.counterNamespace, freshAndroidNamespace);
+    expect(restored.retiredCounterNamespaces, contains(lostWindowsNamespace));
+    expect(
+      androidMessageCounterSequence(restored.nextMessageCounter),
+      42 + androidPortableRestoreCounterReservation,
+    );
+  });
+
+  test('counter lane advances by stride and rejects recipient mismatch', () {
+    const namespace = 0x01020304;
+    final first = androidComposeMessageCounter(10, namespace);
+    expect(
+      androidAdvanceMessageCounter(first),
+      first + androidMessageCounterStride,
+    );
+    expect(
+      androidAdvanceMessageCounter(first, 3),
+      androidComposeMessageCounter(13, namespace),
+    );
+
+    final mismatched = AndroidChatStore.empty().copyWith(
+      receivedCounterRecipientKeyId: 'mallory-key',
+    );
+    expect(
+      () => androidPreparePortableBackupRestore(
+        backupStore: mismatched,
+        currentCounterState: AndroidChatStore.empty(),
+        recipientIdentityKeyId: 'alice-key',
+        newCounterNamespace: namespace,
+        newCounterDeviceId: 'android-endpoint',
+      ),
+      throwsFormatException,
+    );
+  });
+
+  test('portable group events use Windows wire and deduplicate exact ids', () {
+    final payloadJson = jsonEncode({
+      'version': 1,
+      'type': 'group_renamed',
+      'event_id': 'event-1',
+      'actor_key_id': 'owner-key',
+      'created_at_unix_ms': 2000,
+      'group': {
+        'group_id': 'group-1',
+        'name': 'Renamed',
+        'owner_key_id': 'owner-key',
+        'policy': 'normal',
+        'epoch': 2,
+        'created_at_unix_ms': 1000,
+        'updated_at_unix_ms': 2000,
+        'avatar_seed': 'seed',
+        'is_active': true,
+      },
+      'members': const [],
+      'signature': 'signed-value',
+    });
+    final wire = {
+      'event_id': 'event-1',
+      'group_id': 'group-1',
+      'type': 'group_renamed',
+      'actor_key_id': 'owner-key',
+      'group_epoch': 2,
+      'created_at_unix_ms': 2000,
+      'payload_json': payloadJson,
+    };
+    final store = AndroidChatStore.fromJson({
+      'contacts': const [],
+      'messages': const [],
+      'groups': const [],
+      'group_members': const [],
+      'group_events': [wire, wire],
+      'next_message_counter': 1,
+    });
+
+    expect(store.groupEvents, hasLength(1));
+    expect(store.groupEvents.single.signature, 'signed-value');
+    expect(store.groupEvents.single.toPortableBackupJson(), wire);
+    expect(store.groupEvents.single.toJson()['epoch'], 2);
+    expect(store.groupEvents.single.toJson()['event_type'], 'group_renamed');
+  });
+
+  test('portable group event id conflict rejects the whole store', () {
+    final first = {
+      'event_id': 'event-1',
+      'group_id': 'group-1',
+      'type': 'group_invite',
+      'actor_key_id': 'owner-key',
+      'group_epoch': 1,
+      'created_at_unix_ms': 1000,
+      'payload_json': '{"signature":"first"}',
+    };
+    expect(
+      () => AndroidChatStore.fromJson({
+        'contacts': const [],
+        'messages': const [],
+        'groups': const [],
+        'group_members': const [],
+        'group_events': [
+          first,
+          {...first, 'actor_key_id': 'mallory-key'},
+        ],
+        'next_message_counter': 1,
+      }),
+      throwsFormatException,
+    );
   });
 
   test('pendingMessages returns only outgoing pending messages', () {

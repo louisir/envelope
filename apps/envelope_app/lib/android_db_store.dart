@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:math';
 import 'package:path/path.dart';
 import 'package:sqflite_sqlcipher/sqflite.dart';
 import 'android_chat_store.dart';
@@ -45,7 +47,7 @@ class AndroidDbStore {
     return openDatabase(
       dbPath,
       password: password,
-      version: 10,
+      version: 11,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE contacts (
@@ -174,6 +176,9 @@ class AndroidDbStore {
         if (oldVersion < 10) {
           await _createReceivedMessageCounterTable(db);
           await _backfillReceivedMessageCounters(db);
+        }
+        if (oldVersion < 11) {
+          await _migrateReceivedMessageCountersToRecipientScope(db);
         }
       },
     );
@@ -349,12 +354,17 @@ class AndroidDbStore {
   Future<void> _createReceivedMessageCounterTable(DatabaseExecutor db) async {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS received_message_counters (
+        recipient_identity_key_id TEXT NOT NULL,
         sender_key_id TEXT NOT NULL,
         message_counter INTEGER NOT NULL,
         conversation_id TEXT NOT NULL,
         envelope_id TEXT NOT NULL,
         first_seen_at_unix_ms INTEGER NOT NULL,
-        PRIMARY KEY (sender_key_id, message_counter)
+        PRIMARY KEY (
+          recipient_identity_key_id,
+          sender_key_id,
+          message_counter
+        )
       )
     ''');
     await db.execute('''
@@ -366,6 +376,7 @@ class AndroidDbStore {
   Future<void> _backfillReceivedMessageCounters(DatabaseExecutor db) async {
     await db.execute('''
       INSERT OR IGNORE INTO received_message_counters (
+        recipient_identity_key_id,
         sender_key_id,
         message_counter,
         conversation_id,
@@ -373,6 +384,7 @@ class AndroidDbStore {
         first_seen_at_unix_ms
       )
       SELECT
+        '',
         peer_key_id,
         message_counter,
         conversation_id,
@@ -384,6 +396,51 @@ class AndroidDbStore {
         AND conversation_id <> ''
         AND message_counter > 0
     ''');
+  }
+
+  Future<void> _migrateReceivedMessageCountersToRecipientScope(
+    DatabaseExecutor db,
+  ) async {
+    final columns = await db.rawQuery(
+      'PRAGMA table_info(received_message_counters)',
+    );
+    if (columns.isEmpty) {
+      await _createReceivedMessageCounterTable(db);
+      await _backfillReceivedMessageCounters(db);
+      return;
+    }
+    if (columns.any(
+      (row) => row['name']?.toString() == 'recipient_identity_key_id',
+    )) {
+      return;
+    }
+    await db.execute(
+      'ALTER TABLE received_message_counters '
+      'RENAME TO received_message_counters_v10',
+    );
+    await db.execute(
+      'DROP INDEX IF EXISTS idx_received_message_counters_envelope',
+    );
+    await _createReceivedMessageCounterTable(db);
+    await db.execute('''
+      INSERT OR IGNORE INTO received_message_counters (
+        recipient_identity_key_id,
+        sender_key_id,
+        message_counter,
+        conversation_id,
+        envelope_id,
+        first_seen_at_unix_ms
+      )
+      SELECT
+        '',
+        sender_key_id,
+        message_counter,
+        conversation_id,
+        envelope_id,
+        first_seen_at_unix_ms
+      FROM received_message_counters_v10
+    ''');
+    await db.execute('DROP TABLE received_message_counters_v10');
   }
 
   Future<void> close() async {
@@ -630,7 +687,10 @@ class AndroidDbStore {
     return AndroidMessageRecord.fromJson(maps.first);
   }
 
-  Future<bool> addMessage(AndroidMessageRecord message) async {
+  Future<bool> addMessage(
+    AndroidMessageRecord message, {
+    String? recipientIdentityKeyId,
+  }) async {
     final db = _getDb();
     return db.transaction((txn) async {
       final existing = await txn.query(
@@ -644,9 +704,18 @@ class AndroidDbStore {
         return false;
       }
       if (message.direction == 'incoming') {
+        final recipientKeyId = recipientIdentityKeyId?.trim() ?? '';
+        if (recipientKeyId.isEmpty) {
+          throw ArgumentError.value(
+            recipientIdentityKeyId,
+            'recipientIdentityKeyId',
+            'is required for an incoming message',
+          );
+        }
         final counterInserted = await _recordReceivedMessageCounter(
           txn,
           message,
+          recipientKeyId,
         );
         if (!counterInserted) {
           return false;
@@ -664,6 +733,7 @@ class AndroidDbStore {
   Future<bool> _recordReceivedMessageCounter(
     DatabaseExecutor db,
     AndroidMessageRecord message,
+    String recipientIdentityKeyId,
   ) async {
     final senderKeyId = message.peerKeyId.trim();
     final conversationId = message.conversationId.trim();
@@ -671,6 +741,7 @@ class AndroidDbStore {
       return false;
     }
     final rowId = await db.insert('received_message_counters', {
+      'recipient_identity_key_id': recipientIdentityKeyId,
       'sender_key_id': senderKeyId,
       'message_counter': message.messageCounter,
       'conversation_id': conversationId,
@@ -1081,6 +1152,18 @@ class AndroidDbStore {
     return maps.map(AndroidGroupEventRecord.fromJson).toList();
   }
 
+  Future<List<AndroidGroupEventRecord>> getPortableGroupEvents() async {
+    final db = _getDb();
+    final maps = await db.query(
+      'group_events',
+      orderBy: 'group_id ASC, epoch ASC, created_at_unix_ms ASC, event_id ASC',
+      limit: androidMaximumPortableGroupEvents + 1,
+    );
+    return androidNormalizePortableGroupEvents(
+      maps.map(AndroidGroupEventRecord.fromJson),
+    );
+  }
+
   Future<void> createGroupWithMembers({
     required AndroidGroupRecord group,
     required List<AndroidGroupMemberRecord> members,
@@ -1222,41 +1305,255 @@ class AndroidDbStore {
   // --- Metadata (Settings / Counters) ---
 
   Future<int> getNextMessageCounter() async {
-    final db = _getDb();
-    final maps = await db.query(
-      'metadata',
-      where: 'key = ?',
-      whereArgs: ['next_message_counter'],
-    );
-    if (maps.isEmpty) return 1;
-    final valueStr = maps.first['value']?.toString();
-    return int.tryParse(valueStr ?? '1') ?? 1;
+    return (await getCounterLaneState()).nextMessageCounter;
   }
 
   Future<void> setNextMessageCounter(int counter) async {
     final db = _getDb();
-    await db.insert('metadata', {
-      'key': 'next_message_counter',
-      'value': counter.toString(),
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    final lane = await getCounterLaneState();
+    if (!androidHasValidCounterLane(
+          nextMessageCounter: counter,
+          counterNamespace: lane.counterNamespace,
+          counterNamespaceBits: lane.counterNamespaceBits,
+        ) ||
+        counter < lane.nextMessageCounter) {
+      throw ArgumentError.value(
+        counter,
+        'counter',
+        'must advance the current namespaced counter lane',
+      );
+    }
+    await _writeMetadata(db, 'next_message_counter', counter.toString());
+  }
+
+  Future<AndroidChatStore> getCounterLaneState() async {
+    final db = _getDb();
+    return db.transaction((txn) async {
+      final metadata = await _readMetadata(txn, const {
+        'next_message_counter',
+        'counter_namespace',
+        'counter_namespace_bits',
+        'counter_device_id',
+        'counter_retired_namespaces',
+      });
+      final nextCounter =
+          int.tryParse(metadata['next_message_counter'] ?? '') ?? 1;
+      final counterNamespace =
+          int.tryParse(metadata['counter_namespace'] ?? '') ?? 0;
+      final counterNamespaceBits =
+          int.tryParse(metadata['counter_namespace_bits'] ?? '') ?? 0;
+      final counterDeviceId = metadata['counter_device_id']?.trim() ?? '';
+      final retired = _parseRetiredCounterNamespaces(
+        metadata['counter_retired_namespaces'],
+      );
+      final current = AndroidChatStore.empty().copyWith(
+        nextMessageCounter: nextCounter,
+        counterNamespace: counterNamespace,
+        counterNamespaceBits: counterNamespaceBits,
+        counterDeviceId: counterDeviceId,
+        retiredCounterNamespaces: retired.toList(),
+      );
+      if (current.hasValidCounterLane && counterDeviceId.isNotEmpty) {
+        return current.normalized();
+      }
+
+      final excluded = androidCounterNamespacesToExclude([current]);
+      final newNamespace = _randomCounterNamespace(excluded);
+      final highWater = androidMessageCounterSequence(nextCounter);
+      final nextSequence =
+          highWater <=
+              androidMaximumMessageCounterSequence -
+                  androidPortableRestoreCounterReservation
+          ? (highWater + androidPortableRestoreCounterReservation)
+                .clamp(1, androidMaximumMessageCounterSequence)
+                .toInt()
+          : 1;
+      final migrated = current
+          .copyWith(
+            nextMessageCounter: androidComposeMessageCounter(
+              nextSequence,
+              newNamespace,
+            ),
+            counterNamespace: newNamespace,
+            counterNamespaceBits: androidMessageCounterNamespaceBits,
+            counterDeviceId: _randomCounterDeviceId(),
+            retiredCounterNamespaces: excluded.toList(),
+          )
+          .normalized();
+      await _writeCounterLaneMetadata(txn, migrated);
+      return migrated;
+    });
+  }
+
+  Future<void> bindLegacyReceivedCountersToIdentity(
+    String recipientIdentityKeyId,
+  ) async {
+    final recipientKeyId = recipientIdentityKeyId.trim();
+    if (recipientKeyId.isEmpty) {
+      throw ArgumentError.value(
+        recipientIdentityKeyId,
+        'recipientIdentityKeyId',
+      );
+    }
+    final db = _getDb();
+    await db.transaction((txn) async {
+      await txn.execute(
+        '''
+        INSERT OR IGNORE INTO received_message_counters (
+          recipient_identity_key_id,
+          sender_key_id,
+          message_counter,
+          conversation_id,
+          envelope_id,
+          first_seen_at_unix_ms
+        )
+        SELECT
+          ?,
+          sender_key_id,
+          message_counter,
+          conversation_id,
+          envelope_id,
+          first_seen_at_unix_ms
+        FROM received_message_counters
+        WHERE recipient_identity_key_id = ''
+      ''',
+        [recipientKeyId],
+      );
+      await txn.delete(
+        'received_message_counters',
+        where: "recipient_identity_key_id = ''",
+      );
+    });
+  }
+
+  Future<List<AndroidReceivedCounterRanges>> getReceivedCounterRanges(
+    String recipientIdentityKeyId,
+  ) async {
+    final recipientKeyId = recipientIdentityKeyId.trim();
+    if (recipientKeyId.isEmpty) return const [];
+    final db = _getDb();
+    final rows = await db.query(
+      'received_message_counters',
+      columns: ['sender_key_id', 'message_counter'],
+      where: 'recipient_identity_key_id = ?',
+      whereArgs: [recipientKeyId],
+      orderBy: 'sender_key_id ASC, message_counter ASC',
+    );
+    final counters = <AndroidReceivedCounterRanges>[];
+    String? senderKeyId;
+    var ranges = <AndroidReceivedCounterRange>[];
+    int? start;
+    int? end;
+
+    void flushRange() {
+      if (start != null && end != null) {
+        ranges.add(AndroidReceivedCounterRange(start!, end!));
+      }
+      start = null;
+      end = null;
+    }
+
+    void flushSender() {
+      flushRange();
+      if (senderKeyId != null && ranges.isNotEmpty) {
+        counters.add(
+          AndroidReceivedCounterRanges(
+            senderKeyId: senderKeyId,
+            ranges: List.unmodifiable(ranges),
+          ),
+        );
+      }
+      ranges = <AndroidReceivedCounterRange>[];
+    }
+
+    for (final row in rows) {
+      final nextSender = row['sender_key_id']?.toString() ?? '';
+      final nextCounter = row['message_counter'] as int?;
+      if (nextSender.isEmpty || nextCounter == null || nextCounter <= 0) {
+        continue;
+      }
+      if (senderKeyId != nextSender) {
+        flushSender();
+        senderKeyId = nextSender;
+      }
+      if (start == null) {
+        start = nextCounter;
+        end = nextCounter;
+      } else if (end! < androidMaximumMessageCounter &&
+          nextCounter == end! + 1) {
+        end = nextCounter;
+      } else if (nextCounter != end) {
+        flushRange();
+        start = nextCounter;
+        end = nextCounter;
+      }
+    }
+    flushSender();
+    return androidNormalizeReceivedCounterRanges(counters);
   }
 
   Future<AndroidChatStore> exportLocalBackupStore({
+    required String recipientIdentityKeyId,
     bool includeMessages = false,
   }) async {
+    final recipientKeyId = recipientIdentityKeyId.trim();
+    if (recipientKeyId.isEmpty) {
+      throw ArgumentError.value(
+        recipientIdentityKeyId,
+        'recipientIdentityKeyId',
+      );
+    }
+    await bindLegacyReceivedCountersToIdentity(recipientKeyId);
+    final lane = await getCounterLaneState();
     return AndroidChatStore(
       contacts: await getContacts(),
       messages: includeMessages ? await getMessages() : const [],
       groups: await getGroups(),
       groupMembers: await getGroupMembers(),
-      nextMessageCounter: await getNextMessageCounter(),
+      groupEvents: await getPortableGroupEvents(),
+      nextMessageCounter: lane.nextMessageCounter,
+      counterNamespace: lane.counterNamespace,
+      counterNamespaceBits: lane.counterNamespaceBits,
+      counterDeviceId: lane.counterDeviceId,
+      receivedCounterRecipientKeyId: recipientKeyId,
+      receivedCounterRanges: await getReceivedCounterRanges(recipientKeyId),
+      retiredCounterNamespaces: lane.retiredCounterNamespaces,
     ).normalized();
   }
 
-  Future<void> importLocalBackupStore(AndroidChatStore store) async {
+  Future<void> importLocalBackupStore(
+    AndroidChatStore store, {
+    required String recipientIdentityKeyId,
+  }) async {
     final db = _getDb();
     final normalized = store.normalized();
+    final recipientKeyId = recipientIdentityKeyId.trim();
+    if (recipientKeyId.isEmpty ||
+        normalized.receivedCounterRecipientKeyId?.trim() != recipientKeyId ||
+        !normalized.hasValidCounterLane ||
+        (normalized.counterDeviceId?.trim().isEmpty ?? true)) {
+      throw const FormatException(
+        'portable backup restore state is not bound to a fresh counter endpoint',
+      );
+    }
     await db.transaction((txn) async {
+      final localMetadata = await _readMetadata(txn, const {
+        'counter_namespace',
+        'counter_retired_namespaces',
+      });
+      final retired = <int>{
+        ..._parseRetiredCounterNamespaces(
+          localMetadata['counter_retired_namespaces'],
+        ),
+        ...normalized.retiredCounterNamespaces,
+      };
+      final localNamespace =
+          int.tryParse(localMetadata['counter_namespace'] ?? '') ?? 0;
+      if (localNamespace > 0 &&
+          localNamespace <= androidMessageCounterNamespaceMask &&
+          localNamespace != normalized.counterNamespace) {
+        retired.add(localNamespace);
+      }
       await txn.delete('contacts');
       await txn.delete('messages');
       await txn.delete('file_transfer_chunks');
@@ -1287,6 +1584,13 @@ class AndroidDbStore {
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
       }
+      for (final event in normalized.groupEvents) {
+        await txn.insert(
+          'group_events',
+          event.toJson(),
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+      }
       for (final message in normalized.messages) {
         await txn.insert(
           'messages',
@@ -1294,11 +1598,150 @@ class AndroidDbStore {
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
       }
-      await txn.insert('metadata', {
-        'key': 'next_message_counter',
-        'value': normalized.nextMessageCounter.toString(),
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      await _writeCounterLaneMetadata(
+        txn,
+        normalized.copyWith(retiredCounterNamespaces: retired.toList()),
+      );
+      await _insertReceivedCounterRanges(
+        txn,
+        recipientKeyId,
+        normalized.receivedCounterRanges,
+      );
     });
+  }
+
+  Future<Map<String, String>> _readMetadata(
+    DatabaseExecutor db,
+    Set<String> keys,
+  ) async {
+    if (keys.isEmpty) return const {};
+    final ordered = keys.toList();
+    final rows = await db.query(
+      'metadata',
+      columns: ['key', 'value'],
+      where: 'key IN (${List.filled(ordered.length, '?').join(',')})',
+      whereArgs: ordered,
+    );
+    return {
+      for (final row in rows)
+        if (row['key'] != null && row['value'] != null)
+          row['key'].toString(): row['value'].toString(),
+    };
+  }
+
+  Future<void> _writeMetadata(
+    DatabaseExecutor db,
+    String key,
+    String value,
+  ) async {
+    await db.insert('metadata', {
+      'key': key,
+      'value': value,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> _writeCounterLaneMetadata(
+    DatabaseExecutor db,
+    AndroidChatStore lane,
+  ) async {
+    if (!lane.hasValidCounterLane ||
+        (lane.counterDeviceId?.trim().isEmpty ?? true)) {
+      throw const FormatException('counter lane metadata is invalid');
+    }
+    await _writeMetadata(
+      db,
+      'next_message_counter',
+      lane.nextMessageCounter.toString(),
+    );
+    await _writeMetadata(
+      db,
+      'counter_namespace',
+      lane.counterNamespace.toString(),
+    );
+    await _writeMetadata(
+      db,
+      'counter_namespace_bits',
+      lane.counterNamespaceBits.toString(),
+    );
+    await _writeMetadata(db, 'counter_device_id', lane.counterDeviceId!.trim());
+    await _writeMetadata(
+      db,
+      'counter_retired_namespaces',
+      jsonEncode(lane.retiredCounterNamespaces),
+    );
+  }
+
+  Set<int> _parseRetiredCounterNamespaces(String? json) {
+    if (json == null || json.trim().isEmpty) return <int>{};
+    try {
+      final decoded = jsonDecode(json);
+      if (decoded is! List) return <int>{};
+      return decoded
+          .whereType<num>()
+          .map((value) => value.toInt())
+          .where(
+            (value) => value > 0 && value <= androidMessageCounterNamespaceMask,
+          )
+          .toSet();
+    } catch (_) {
+      return <int>{};
+    }
+  }
+
+  int _randomCounterNamespace(Set<int> excluded) {
+    final random = Random.secure();
+    int value;
+    do {
+      value = (random.nextInt(1 << 16) << 16) | random.nextInt(1 << 16);
+    } while (value == 0 || excluded.contains(value));
+    return value;
+  }
+
+  String _randomCounterDeviceId() {
+    final random = Random.secure();
+    final suffix = List.generate(
+      16,
+      (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+    ).join();
+    return 'android-$suffix';
+  }
+
+  Future<void> _insertReceivedCounterRanges(
+    DatabaseExecutor db,
+    String recipientIdentityKeyId,
+    List<AndroidReceivedCounterRanges> counters,
+  ) async {
+    final normalized = androidNormalizeReceivedCounterRanges(counters);
+    final firstSeenAt = DateTime.now().millisecondsSinceEpoch;
+    var batch = db.batch();
+    var batchCount = 0;
+    for (final sender in normalized) {
+      for (final range in sender.ranges) {
+        for (var counter = range.start; ; counter += 1) {
+          batch.insert(
+            'received_message_counters',
+            {
+              'recipient_identity_key_id': recipientIdentityKeyId,
+              'sender_key_id': sender.senderKeyId,
+              'message_counter': counter,
+              'conversation_id': sender.senderKeyId,
+              'envelope_id':
+                  'portable-backup:$recipientIdentityKeyId:${sender.senderKeyId}:$counter',
+              'first_seen_at_unix_ms': firstSeenAt,
+            },
+            conflictAlgorithm: ConflictAlgorithm.ignore,
+          );
+          batchCount += 1;
+          if (batchCount == 1000) {
+            await batch.commit(noResult: true);
+            batch = db.batch();
+            batchCount = 0;
+          }
+          if (counter == range.end) break;
+        }
+      }
+    }
+    if (batchCount > 0) await batch.commit(noResult: true);
   }
 
   // --- Clean Store ---
@@ -1306,6 +1749,19 @@ class AndroidDbStore {
   Future<void> clearAll() async {
     final db = _getDb();
     await db.transaction((txn) async {
+      final counterMetadata = await _readMetadata(txn, const {
+        'counter_namespace',
+        'counter_retired_namespaces',
+      });
+      final retired = _parseRetiredCounterNamespaces(
+        counterMetadata['counter_retired_namespaces'],
+      );
+      final activeNamespace =
+          int.tryParse(counterMetadata['counter_namespace'] ?? '') ?? 0;
+      if (activeNamespace > 0 &&
+          activeNamespace <= androidMessageCounterNamespaceMask) {
+        retired.add(activeNamespace);
+      }
       await txn.delete('contacts');
       await txn.delete('messages');
       await txn.delete('file_transfer_chunks');
@@ -1315,6 +1771,13 @@ class AndroidDbStore {
       await txn.delete('group_members');
       await txn.delete('groups');
       await txn.delete('metadata');
+      if (retired.isNotEmpty) {
+        await _writeMetadata(
+          txn,
+          'counter_retired_namespaces',
+          jsonEncode(retired.toList()..sort()),
+        );
+      }
     });
   }
 
@@ -1340,6 +1803,7 @@ class AndroidDbStore {
             conflictAlgorithm: ConflictAlgorithm.replace,
           );
         }
+        await _backfillReceivedMessageCounters(txn);
         await txn.insert('metadata', {
           'key': 'next_message_counter',
           'value': oldStore.nextMessageCounter.toString(),
