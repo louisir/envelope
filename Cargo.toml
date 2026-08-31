@@ -9,6 +9,7 @@ members = [
     "crates/envelope-server-core",
     "apps/envelope-cli",
     "apps/envelope-server",
+    "apps/yourturn-robot",
 ]
 resolver = "3"
 
@@ -26,6 +27,7 @@ chacha20poly1305 = "0.10.1"
 clap = { version = "4.5.53", features = ["derive"] }
 ed25519-dalek = { version = "2.2.0", features = ["rand_core"] }
 hex = "0.4.3"
+fs2 = "0.4.3"
 hkdf = "0.12.4"
 image = { version = "0.25.9", default-features = false, features = ["png"] }
 iroh = "1.0.0-rc.0"

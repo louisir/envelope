@@ -298,6 +298,28 @@ impl Identity {
         self.public.clone()
     }
 
+    /// Validate that the stored private material and public Contact describe
+    /// the same Envelope identity.
+    pub fn validate(&self) -> Result<()> {
+        if self.version != ENVELOPE_PROTOCOL_VERSION {
+            bail!("unsupported identity version");
+        }
+        if self.display_name != self.public.display_name {
+            bail!("identity display name does not match public Contact");
+        }
+        let signing_key = self.signing_key()?;
+        let agreement_secret = self.agreement_secret()?;
+        let expected = Contact::new(
+            self.display_name.clone(),
+            signing_key.verifying_key().to_bytes(),
+            X25519PublicKey::from(&agreement_secret).to_bytes(),
+        );
+        if self.public != expected {
+            bail!("identity private material does not match public Contact");
+        }
+        Ok(())
+    }
+
     fn signing_key(&self) -> Result<SigningKey> {
         signing_key_from_secret(&self.signing_secret, "signing_secret")
     }
@@ -434,6 +456,21 @@ impl Contact {
             agreement_public: agreement_public_encoded,
             key_id,
         }
+    }
+
+    /// Validate the public keys and their derived key identifier.
+    pub fn validate(&self) -> Result<()> {
+        if self.version != ENVELOPE_PROTOCOL_VERSION {
+            bail!("unsupported Contact version");
+        }
+        let signing_public = decode_array::<32>(&self.signing_public, "signing_public")?;
+        VerifyingKey::from_bytes(&signing_public).context("invalid Ed25519 verifying key")?;
+        let agreement_public = decode_array::<32>(&self.agreement_public, "agreement_public")?;
+        let expected_key_id = public_key_id(&signing_public, &agreement_public);
+        if self.key_id != expected_key_id {
+            bail!("Contact key_id does not match public keys");
+        }
+        Ok(())
     }
 
     fn verifying_key(&self) -> Result<VerifyingKey> {
