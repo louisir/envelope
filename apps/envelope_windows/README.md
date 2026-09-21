@@ -70,7 +70,7 @@ the verification executable, publishes the WPF app, copies the native DLL, write
 an executable SHA-256 file, and creates:
 
 ```text
-target\portable\Envelope-Windows-win-x64.zip
+target\portable\Envelope-win-x64.zip
 ```
 
 The default package is framework-dependent and requires the .NET 8 Windows

@@ -11,7 +11,7 @@ using Envelope.Windows.Models;
 using Envelope.Windows.Services;
 using Envelope.Windows.ViewModels;
 
-internal static class Program
+internal static partial class Program
 {
     private static int _passed;
     [STAThread]
@@ -42,6 +42,7 @@ internal static class Program
             PresentationTraceSources.DataBindingSource.Switch.Level = SourceLevels.Error;
             LocalizationService.Current.ApplyCulture("zh-CN");
             ThemeService.Current.ApplyTheme(ThemePreference.Light);
+            VerifySettingsDraft(output);
             var service = new FakeWorkspace();
             var model = new MainWindowViewModel(service, LocalizationService.Current, ThemeService.Current);
             model.ApplySnapshot(service.Snapshot);

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Runtime.CompilerServices;
 using System.Windows.Threading;
 using Envelope.Windows.Models;
 using Envelope.Windows.Services;
@@ -24,6 +25,10 @@ public sealed class SettingsViewModel : PageViewModel
     private string _selectedLanguageCode;
     private ThemePreference _selectedTheme;
     private readonly DispatcherTimer _recoveryPhraseClearTimer;
+    private bool _hasSnapshot;
+    private bool _applyingSettingsSnapshot;
+    private bool _settingsDirty;
+    private long _settingsEditVersion;
 
     public SettingsViewModel(
         IEnvelopeUiService workspace,
@@ -143,31 +148,31 @@ public sealed class SettingsViewModel : PageViewModel
     public bool LocalLockEnabled
     {
         get => _localLockEnabled;
-        set => SetProperty(ref _localLockEnabled, value);
+        set => SetSettingsProperty(ref _localLockEnabled, value);
     }
 
     public bool AutoBackupEnabled
     {
         get => _autoBackupEnabled;
-        set => SetProperty(ref _autoBackupEnabled, value);
+        set => SetSettingsProperty(ref _autoBackupEnabled, value);
     }
 
     public bool AutoSyncEnabled
     {
         get => _autoSyncEnabled;
-        set => SetProperty(ref _autoSyncEnabled, value);
+        set => SetSettingsProperty(ref _autoSyncEnabled, value);
     }
 
     public string BackupInterval
     {
         get => _backupInterval;
-        set => SetProperty(ref _backupInterval, value);
+        set => SetSettingsProperty(ref _backupInterval, value);
     }
 
     public string BackupRetention
     {
         get => _backupRetention;
-        set => SetProperty(ref _backupRetention, value);
+        set => SetSettingsProperty(ref _backupRetention, value);
     }
 
     public string SyncEntry
@@ -175,7 +180,7 @@ public sealed class SettingsViewModel : PageViewModel
         get => _syncEntry;
         set
         {
-            if (SetProperty(ref _syncEntry, value))
+            if (SetSettingsProperty(ref _syncEntry, value))
             {
                 SyncNowCommand.RaiseCanExecuteChanged();
             }
@@ -232,16 +237,44 @@ public sealed class SettingsViewModel : PageViewModel
 
     public override void ApplySnapshot(UiWorkspaceSnapshot snapshot)
     {
+        if (_hasSnapshot && IdentityKeyId != (snapshot.Identity?.KeyId ?? string.Empty))
+        {
+            // A deliberate identity switch must not carry the previous identity's draft.
+            _settingsDirty = false;
+            _settingsEditVersion++;
+        }
+        _hasSnapshot = true;
         IsIdentityReady = snapshot.Identity?.IsReady == true;
         DisplayName = snapshot.Identity?.DisplayName ?? "Envelope User";
         IdentityKeyId = snapshot.Identity?.KeyId ?? string.Empty;
         IdentityFingerprint = snapshot.Identity?.Fingerprint ?? string.Empty;
-        LocalLockEnabled = snapshot.Settings.LocalLockEnabled;
-        AutoBackupEnabled = snapshot.Settings.AutoBackupEnabled;
-        AutoSyncEnabled = snapshot.Settings.AutoSyncEnabled;
-        BackupInterval = snapshot.Settings.BackupInterval;
-        BackupRetention = snapshot.Settings.BackupRetention;
-        SyncEntry = snapshot.Settings.SyncEntry;
+        // Network/status refreshes are not an instruction to discard the user's form.
+        // All six fields are saved together by SaveSyncEntry.
+        if (!_settingsDirty)
+        {
+            _applyingSettingsSnapshot = true;
+            try
+            {
+                LocalLockEnabled = snapshot.Settings.LocalLockEnabled;
+                AutoBackupEnabled = snapshot.Settings.AutoBackupEnabled;
+                AutoSyncEnabled = snapshot.Settings.AutoSyncEnabled;
+                BackupInterval = snapshot.Settings.BackupInterval;
+                BackupRetention = snapshot.Settings.BackupRetention;
+                SyncEntry = snapshot.Settings.SyncEntry;
+            }
+            finally { _applyingSettingsSnapshot = false; }
+        }
+    }
+
+    private bool SetSettingsProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value)) return false;
+        if (!_applyingSettingsSnapshot)
+        {
+            _settingsDirty = true;
+            _settingsEditVersion++;
+        }
+        return SetProperty(ref field, value, propertyName);
     }
 
     public void ClearSensitiveInput()
@@ -252,6 +285,7 @@ public sealed class SettingsViewModel : PageViewModel
 
     private async Task ExecuteAsync(UiAction action, string? text = null)
     {
+        var submittedEditVersion = _settingsEditVersion;
         var options = new Dictionary<string, string>
         {
             ["display_name"] = DisplayName,
@@ -263,7 +297,25 @@ public sealed class SettingsViewModel : PageViewModel
         };
         try
         {
-            await _workspace.ExecuteAsync(new UiOperationRequest(action, Text: text, Options: options));
+            var result = await _workspace.ExecuteAsync(new UiOperationRequest(action, Text: text, Options: options));
+            if (action is UiAction.SaveSyncEntry or UiAction.RestoreBackup && result.Succeeded)
+            {
+                // Read back normalization only after persistence succeeds. An edit made
+                // during either await is a newer draft, even if it reverts to the old value.
+                UiWorkspaceSnapshot savedSnapshot;
+                try { savedSnapshot = await _workspace.LoadAsync(); }
+                catch
+                {
+                    // Persistence already succeeded. A failed UI readback must not
+                    // crash the async command or discard an unconfirmed draft.
+                    return;
+                }
+                if (_settingsEditVersion == submittedEditVersion)
+                {
+                    _settingsDirty = false;
+                    ApplySnapshot(savedSnapshot);
+                }
+            }
         }
         finally
         {
