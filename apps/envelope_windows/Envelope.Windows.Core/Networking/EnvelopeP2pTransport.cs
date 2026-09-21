@@ -162,7 +162,8 @@ public sealed class EnvelopeP2pTransport : IAsyncDisposable
             throw new EnvelopeP2pException("Opaque envelope exceeds the 8 MiB P2P frame limit.");
         }
 
-        var operationTimeout = timeout ?? FastAttemptTimeout;
+        var operationTimeout = timeout ?? (envelopeBytes.Length > 256 * 1024
+            ? TimeSpan.FromSeconds(60) : FastAttemptTimeout);
         if (operationTimeout <= TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(nameof(timeout), "Attempt timeout must be positive.");

@@ -40,6 +40,12 @@ public enum MessageDeliveryState
     Sent,
     Delivered,
     Failed,
+    LegacyUnverified,
+    StagedSingle,
+    Replicated,
+    Deferred,
+    Rejected,
+    Expired,
 }
 
 public sealed record MessageUiModel(

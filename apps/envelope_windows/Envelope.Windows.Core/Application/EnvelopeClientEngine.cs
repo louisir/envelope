@@ -70,6 +70,8 @@ public sealed partial class EnvelopeClientEngine : IAsyncDisposable
     private WindowsClientState _state = new();
     private bool _initialized;
     private bool _disposed;
+    private readonly HaDeploymentTrust? _haTrust;
+    private EnvelopeHaServerClient? _haServer;
 
     public EnvelopeClientEngine(
         IEnvelopeNativeClient native,
@@ -83,6 +85,7 @@ public sealed partial class EnvelopeClientEngine : IAsyncDisposable
         _paths = paths;
         _diagnostics = diagnostics;
         _p2p = p2p ?? new EnvelopeP2pTransport();
+        _haTrust = HaDeploymentTrust.LoadBundled();
     }
 
     public event EventHandler? StateChanged;
@@ -90,6 +93,7 @@ public sealed partial class EnvelopeClientEngine : IAsyncDisposable
     public WindowsClientState State => _state;
     public bool IsInitialized => _initialized;
     public bool HasIdentity => _state.Identity is not null;
+    public bool UsesHaRelay => _haTrust is not null;
     public EnvelopeP2pStatus? P2pStatus => _p2p.Status;
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
@@ -198,6 +202,7 @@ public sealed partial class EnvelopeClientEngine : IAsyncDisposable
                 _state.GroupEvents.Clear();
                 _state.PendingEnvelopes.Clear();
                 _state.PendingEnvelopes.AddRange(preservedPending);
+                if (!sameIdentity) { _state.RecipientResultOutbox.Clear(); _state.HaMailboxCursor = null; }
                 _state.SealedEnvelopes.Clear();
                 _state.ReceivedCounters.Clear();
                 _state.ReceivedCounters.AddRange(preservedReceivedCounters);
@@ -401,7 +406,8 @@ public sealed partial class EnvelopeClientEngine : IAsyncDisposable
                 outbound.EnvelopeId,
                 0,
                 1).ConfigureAwait(false);
-            message = stagedMessage with { DeliveryState = delivery.State, DeliveryDetail = delivery.Detail };
+            message = (_state.Messages.FirstOrDefault(item => item.EnvelopeId == stagedMessage.EnvelopeId) ?? stagedMessage)
+                with { DeliveryState = delivery.State, DeliveryDetail = delivery.Detail };
             _state.Messages.RemoveAll(item => item.EnvelopeId == message.EnvelopeId);
             _state.Messages.Add(message);
             await PersistCoreAsync(cancellationToken).ConfigureAwait(false);
@@ -419,6 +425,8 @@ public sealed partial class EnvelopeClientEngine : IAsyncDisposable
         {
             var identity = RequireIdentity();
             var syncStartedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            if (_haTrust is not null)
+                return await SynchronizeHaCoreAsync(cancellationToken).ConfigureAwait(false);
             if (PruneMailboxQuarantineCore(syncStartedAt) +
                 PruneDeferredMailboxCore(syncStartedAt) +
                 PruneExpiredInboundFileCacheCore(syncStartedAt) > 0)
@@ -939,13 +947,33 @@ public sealed partial class EnvelopeClientEngine : IAsyncDisposable
             // could turn a deferred mailbox prerequisite into a poison ACK.
             if (inbound.SenderKeyId != contact.KeyId || inbound.RecipientKeyId != identity.KeyId)
                 throw new CryptographicException("信封身份与本机联系人不一致。");
-            var existing = _state.Messages.FirstOrDefault(item => item.EnvelopeId == inbound.EnvelopeId);
+            var durableResult = _state.RecipientResultOutbox.FirstOrDefault(item =>
+                item.SenderKeyId == inbound.SenderKeyId && item.RecipientKeyId == inbound.RecipientKeyId &&
+                item.EnvelopeId == inbound.EnvelopeId);
+            if (durableResult is not null && durableResult.EnvelopeSha256 != HaOutboundState.Hash(normalized))
+                throw new CryptographicException("相同信封 ID 的密文内容冲突。");
+            if (durableResult is { BusinessApplied: true })
+            {
+                if (durableResult.EnvelopeSha256 != HaOutboundState.Hash(normalized))
+                    throw new CryptographicException("相同信封 ID 的密文内容冲突。");
+                var prior = _state.Messages.FirstOrDefault(item => item.EnvelopeId == inbound.EnvelopeId ||
+                    durableResult.LogicalMessageId is not null && item.LogicalMessageId == durableResult.LogicalMessageId);
+                // Deleted chats and compacted file progress do not remove the
+                // durable dedup/result index or re-apply group side effects.
+                return new EnvelopeImportResult(prior is null
+                    ? InboundMessage(inbound, contact, string.Empty, "已处理的重复信封", contact.KeyId) with { IsHidden = true }
+                    : prior with { EnvelopeId = inbound.EnvelopeId }, true);
+            }
+            var existing = _state.Messages.FirstOrDefault(item => item.EnvelopeId == inbound.EnvelopeId &&
+                item.Direction == MessageDirection.Incoming && item.PeerKeyId == inbound.SenderKeyId);
             if (existing is not null) return new EnvelopeImportResult(existing, true);
             EnsureFreshCounter(contact.KeyId, inbound.MessageCounter);
             var message = await ProcessInboundPayloadCoreAsync(inbound, contact, normalized, cancellationToken)
                 .ConfigureAwait(false);
             RecordReceivedCounter(contact.KeyId, inbound.MessageCounter);
             _state.Messages.Add(message);
+            StageRecipientResultCore(inbound.SenderKeyId, inbound.RecipientKeyId,
+                inbound.EnvelopeId, normalized, message, inbound.Mime);
             return new EnvelopeImportResult(message, false);
         }
         throw new EnvelopeCiphertextRejectedException(
@@ -1009,7 +1037,8 @@ public sealed partial class EnvelopeClientEngine : IAsyncDisposable
         _state.ReceivedCounters.ToArray(),
         _state.ReceivedCounterArchive.ToArray(),
         _state.InboundFileTransfers.ToArray(),
-        _state.InboundFileChunks.ToArray());
+        _state.InboundFileChunks.ToArray(),
+        _state.RecipientResultOutbox.ToArray());
 
     private void RollbackInboundMutationCore(InboundStateSnapshot snapshot)
     {
@@ -1030,6 +1059,7 @@ public sealed partial class EnvelopeClientEngine : IAsyncDisposable
         Restore(_state.ReceivedCounterArchive, snapshot.ReplayArchive);
         Restore(_state.InboundFileTransfers, snapshot.Transfers);
         Restore(_state.InboundFileChunks, snapshot.Chunks);
+        Restore(_state.RecipientResultOutbox, snapshot.RecipientResults);
 
         foreach (var path in newPaths) DeleteInboundRollbackFileCore(path);
 
@@ -1080,7 +1110,8 @@ public sealed partial class EnvelopeClientEngine : IAsyncDisposable
         IReadOnlyList<ReceivedCounterRecord> ReceivedCounters,
         IReadOnlyList<IdentityReceivedCounterRecord> ReplayArchive,
         IReadOnlyList<InboundFileTransferRecord> Transfers,
-        IReadOnlyList<InboundFileChunkRecord> Chunks);
+        IReadOnlyList<InboundFileChunkRecord> Chunks,
+        IReadOnlyList<HaRecipientResultDescriptor> RecipientResults);
 
     private IReadOnlyList<StoredContact> KnownSenderCandidates(string? senderKeyId)
     {
@@ -1227,8 +1258,13 @@ public sealed partial class EnvelopeClientEngine : IAsyncDisposable
                     .ConfigureAwait(false);
                 if (!string.Equals(ack.EnvelopeId, envelopeId, StringComparison.Ordinal))
                     throw new CryptographicException("P2P ACK envelope_id 与发送信封不匹配。");
+                await ApplyP2pResultBundleCoreAsync(ack, contact.ContactJson, cancellationToken).ConfigureAwait(false);
+                if (ack.RecipientResultJson is { } resultJson &&
+                    await ApplyRecipientResultCoreAsync(envelopeId, resultJson, contact.ContactJson, cancellationToken).ConfigureAwait(false))
+                    return new DeliveryResult("p2p", _state.PendingEnvelopes.Single(item => item.EnvelopeId == envelopeId).DeliveryState,
+                        "收件方签名接收结果已验证并保存。");
                 _p2pCooldown.RecordSuccess(contact.KeyId, contact.P2pTicket);
-                return await CompleteOutboundDeliveryCoreAsync(
+                if (_haTrust is null) return await CompleteOutboundDeliveryCoreAsync(
                         envelopeId,
                         new DeliveryResult("p2p", DeliveryState.Sent, ack.Detail),
                         cancellationToken)
@@ -1248,6 +1284,12 @@ public sealed partial class EnvelopeClientEngine : IAsyncDisposable
                     ["error"] = error.Message,
                 }, cancellationToken).ConfigureAwait(false);
             }
+        }
+
+        if (_haTrust is not null)
+        {
+            var routed = await TryDeliverHaRouteCoreAsync(contact, envelopeId, envelopeBase64, cancellationToken).ConfigureAwait(false);
+            return routed ?? await DeliverHaEnvelopeCoreAsync(contact, envelopeId, cancellationToken).ConfigureAwait(false);
         }
 
         if (!string.IsNullOrWhiteSpace(_state.Settings.SyncServiceUrl))
@@ -1275,8 +1317,13 @@ public sealed partial class EnvelopeClientEngine : IAsyncDisposable
                                         .ConfigureAwait(false);
                                     if (!string.Equals(ack.EnvelopeId, envelopeId, StringComparison.Ordinal))
                                         throw new CryptographicException("P2P ACK envelope_id 与发送信封不匹配。");
+                                    await ApplyP2pResultBundleCoreAsync(ack, contact.ContactJson, cancellationToken).ConfigureAwait(false);
+                                    if (ack.RecipientResultJson is { } resultJson &&
+                                        await ApplyRecipientResultCoreAsync(envelopeId, resultJson, contact.ContactJson, cancellationToken).ConfigureAwait(false))
+                                        return new DeliveryResult("server_route_p2p", _state.PendingEnvelopes.Single(item => item.EnvelopeId == envelopeId).DeliveryState,
+                                            "收件方签名接收结果已验证并保存。");
                                     _p2pCooldown.RecordSuccess(contact.KeyId, endpoint.P2pTicket);
-                                    return await CompleteOutboundDeliveryCoreAsync(
+                                    if (_haTrust is null) return await CompleteOutboundDeliveryCoreAsync(
                                             envelopeId,
                                             new DeliveryResult("server_route_p2p", DeliveryState.Sent, ack.Detail),
                                             cancellationToken)
@@ -1355,6 +1402,15 @@ public sealed partial class EnvelopeClientEngine : IAsyncDisposable
         foreach (var work in workItems)
         {
             var existing = _state.PendingEnvelopes.FirstOrDefault(item => item.EnvelopeId == work.EnvelopeId);
+            if (existing is not null && (existing.RecipientKeyId != work.Contact.KeyId ||
+                existing.Ha is { } ha && ha.EnvelopeSha256 != HaOutboundState.Hash(work.EnvelopeBase64) ||
+                !string.IsNullOrEmpty(existing.EnvelopeBase64) &&
+                HaOutboundState.Hash(existing.EnvelopeBase64) != HaOutboundState.Hash(work.EnvelopeBase64)))
+                throw new InvalidDataException("信封 ID 已绑定另一收件人或内容，禁止替换待发密文。");
+        }
+        foreach (var work in workItems)
+        {
+            var existing = _state.PendingEnvelopes.FirstOrDefault(item => item.EnvelopeId == work.EnvelopeId);
             var staged = existing is null
                 ? new PendingEnvelopeRecord(
                     work.EnvelopeId,
@@ -1364,7 +1420,8 @@ public sealed partial class EnvelopeClientEngine : IAsyncDisposable
                     RecipientContactJson: work.Contact.ContactJson,
                     LogicalMessageId: work.LogicalMessageId,
                     ChildIndex: work.ChildIndex,
-                    ChildCount: work.ChildCount)
+                    ChildCount: work.ChildCount,
+                    Ha: HaOutboundState.Create(RequireIdentity().KeyId, work.EnvelopeBase64, now))
                 : existing with
                 {
                     RecipientKeyId = work.Contact.KeyId,
@@ -1373,6 +1430,8 @@ public sealed partial class EnvelopeClientEngine : IAsyncDisposable
                     LogicalMessageId = work.LogicalMessageId,
                     ChildIndex = work.ChildIndex,
                     ChildCount = work.ChildCount,
+                    Ha = existing.Ha ?? HaOutboundState.Create(
+                        RequireIdentity().KeyId, work.EnvelopeBase64, existing.CreatedAtUnixMs),
                 };
             _state.PendingEnvelopes.RemoveAll(item => item.EnvelopeId == work.EnvelopeId);
             _state.PendingEnvelopes.Add(staged);
@@ -1402,6 +1461,8 @@ public sealed partial class EnvelopeClientEngine : IAsyncDisposable
     {
         var existing = _state.PendingEnvelopes.FirstOrDefault(item => item.EnvelopeId == work.EnvelopeId);
         if (existing is not null &&
+            existing.Ha is { } ha && ha.EnvelopeSha256 == HaOutboundState.Hash(work.EnvelopeBase64) &&
+            existing.RecipientKeyId == work.Contact.KeyId &&
             !string.IsNullOrWhiteSpace(existing.RecipientContactJson) &&
             existing.LogicalMessageId == work.LogicalMessageId &&
             existing.ChildIndex == work.ChildIndex &&
@@ -1428,7 +1489,14 @@ public sealed partial class EnvelopeClientEngine : IAsyncDisposable
             LastError = result.State == DeliveryState.Pending ? result.Detail : null,
             DeliveryState = result.State,
             LastRoute = result.Route,
-            EnvelopeBase64 = result.State == DeliveryState.Pending ? existing.EnvelopeBase64 : string.Empty,
+            // A v1 mailbox response or unsigned P2P ACK is not durable v2
+            // evidence. Keep the only recoverable ciphertext until a verified
+            // terminal result or an explicit retention decision is persisted.
+            EnvelopeBase64 = existing.EnvelopeBase64,
+            Ha = existing.Ha is { } ha ? ha with
+            {
+                LegacyTransportObserved = result.State != DeliveryState.Pending,
+            } : null,
         };
         RefreshLogicalMessageDeliveryCore(existing.LogicalMessageId ?? envelopeId, result.Detail);
         try
@@ -1465,6 +1533,15 @@ public sealed partial class EnvelopeClientEngine : IAsyncDisposable
     private void RefreshLogicalMessageDeliveryCore(string logicalMessageId, string? detail = null)
     {
         var aggregate = AggregateLogicalDeliveryStateCore(logicalMessageId);
+        var children = _state.PendingEnvelopes.Where(item => (item.LogicalMessageId ?? item.EnvelopeId) == logicalMessageId).ToArray();
+        var hasAllChildren = children.Length > 0 && children.All(item => item.Ha is not null) &&
+            children.Select(item => item.ChildIndex).Distinct().Count() == children.Max(item => item.ChildCount);
+        var storage = hasAllChildren ? children.Min(item => item.Ha!.StorageState) : (HaStorageState?)null;
+        var delivery = !hasAllChildren ? (HaDeliveryState?)null :
+            children.All(item => item.Ha!.DeliveryState == HaDeliveryState.Delivered) ? HaDeliveryState.Delivered :
+            children.Any(item => item.Ha!.DeliveryState == HaDeliveryState.Rejected) ? HaDeliveryState.Rejected :
+            children.Any(item => item.Ha!.DeliveryState == HaDeliveryState.Expired) ? HaDeliveryState.Expired :
+            children.Any(item => item.Ha!.DeliveryState == HaDeliveryState.Deferred) ? HaDeliveryState.Deferred : HaDeliveryState.Pending;
         for (var index = 0; index < _state.Messages.Count; index++)
         {
             var message = _state.Messages[index];
@@ -1472,6 +1549,8 @@ public sealed partial class EnvelopeClientEngine : IAsyncDisposable
             _state.Messages[index] = message with
             {
                 DeliveryState = aggregate,
+                StorageState = storage,
+                VerifiedDeliveryState = delivery,
                 DeliveryDetail = string.IsNullOrWhiteSpace(detail) ? message.DeliveryDetail : detail,
             };
         }
@@ -1510,6 +1589,8 @@ public sealed partial class EnvelopeClientEngine : IAsyncDisposable
         }
 
         EnvelopeImportResult result;
+        string? signedResult = null;
+        IReadOnlyList<string>? resultBundle = null;
         try
         {
             result = await ImportEnvelopeAndPersistCoreAsync(
@@ -1517,6 +1598,8 @@ public sealed partial class EnvelopeClientEngine : IAsyncDisposable
                     senderKeyId: null,
                     cancellationToken)
                 .ConfigureAwait(false);
+            signedResult = await SignRecipientResultCoreAsync(result.Message.EnvelopeId, cancellationToken, result.Message.PeerKeyId).ConfigureAwait(false);
+            resultBundle = await SignCompletedFileResultBundleCoreAsync(result.Message.EnvelopeId, result.Message.PeerKeyId, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception error)
         {
@@ -1530,7 +1613,7 @@ public sealed partial class EnvelopeClientEngine : IAsyncDisposable
         RaiseStateChanged();
         return EnvelopeP2pAck.Ok(
             result.Message.EnvelopeId,
-            result.Duplicate ? "duplicate" : "stored");
+            result.Duplicate ? "duplicate" : "stored") with { RecipientResultJson = signedResult, RecipientResultsJson = resultBundle };
     }
 
     private async Task RegisterRouteCoreAsync(EnvelopeServerClient server, CancellationToken cancellationToken)
@@ -1711,6 +1794,7 @@ public sealed partial class EnvelopeClientEngine : IAsyncDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        _haServer?.Dispose();
         await _p2p.DisposeAsync().ConfigureAwait(false);
         _gate.Dispose();
     }

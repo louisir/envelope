@@ -4,6 +4,10 @@ param(
     [string]$Configuration = 'Release',
     [ValidateSet('win-x64')]
     [string]$Runtime = 'win-x64',
+    [string]$AppVersion = '',
+    [string]$BuildName = '',
+    [ValidatePattern('^[A-Za-z0-9.-]*$')]
+    [string]$PackageSuffix = '',
     [switch]$SelfContained,
     [switch]$SkipVerification
 )
@@ -15,11 +19,37 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $solutionPath = Join-Path $repoRoot 'apps\envelope_windows\Envelope.Windows.sln'
 $appProject = Join-Path $repoRoot 'apps\envelope_windows\Envelope.Windows\Envelope.Windows.csproj'
 $verificationProject = Join-Path $repoRoot 'apps\envelope_windows\Envelope.Windows.Tests\Envelope.Windows.Tests.csproj'
+$uiVerificationProject = Join-Path $repoRoot 'apps\envelope_windows\Envelope.Windows.UiTests\Envelope.Windows.UiTests.csproj'
 $nativeDll = Join-Path $repoRoot 'target\release\envelope_ffi.dll'
 $portableRoot = Join-Path $repoRoot 'target\portable'
 $publishDir = Join-Path $portableRoot "Envelope-Windows-$Runtime"
+if ($PackageSuffix) { $publishDir = "$publishDir-$PackageSuffix" }
 $archivePath = "$publishDir.zip"
 $archiveHashPath = "$archivePath.sha256"
+
+if ([string]::IsNullOrWhiteSpace($AppVersion)) {
+    $AppVersion = "v1.0.1.$((Get-Date).ToString('yyyyMMddHHmmss.fff'))"
+}
+if ([string]::IsNullOrWhiteSpace($BuildName)) {
+    $candidateBuildName = $AppVersion.Trim()
+    if ($candidateBuildName.StartsWith('v', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $candidateBuildName = $candidateBuildName.Substring(1)
+    }
+    $BuildName = if ($candidateBuildName -match '^(\d+\.\d+\.\d+)') {
+        $Matches[1]
+    } else {
+        '1.0.1'
+    }
+}
+if ($BuildName -notmatch '^\d+\.\d+\.\d+$') {
+    throw "Windows BuildName must be a numeric major.minor.patch value: $BuildName"
+}
+$versionArguments = @(
+    "-p:Version=$BuildName",
+    "-p:AssemblyVersion=${BuildName}.0",
+    "-p:FileVersion=${BuildName}.0",
+    "-p:InformationalVersion=$AppVersion"
+)
 
 if (-not (Test-Path -LiteralPath $solutionPath -PathType Leaf)) {
     throw "WPF solution not found: $solutionPath"
@@ -27,6 +57,7 @@ if (-not (Test-Path -LiteralPath $solutionPath -PathType Leaf)) {
 
 Push-Location $repoRoot
 try {
+    & (Join-Path $PSScriptRoot 'sync-windows-brand-assets.ps1')
     cargo build --release -p envelope-ffi
     if ($LASTEXITCODE -ne 0) { throw "Rust FFI build failed: $LASTEXITCODE" }
 
@@ -39,12 +70,14 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "RID restore failed: $LASTEXITCODE" }
     }
 
-    dotnet build $solutionPath -c $Configuration --no-restore
+    dotnet build $solutionPath -c $Configuration --no-restore @versionArguments
     if ($LASTEXITCODE -ne 0) { throw "WPF solution build failed: $LASTEXITCODE" }
 
     if (-not $SkipVerification) {
         dotnet run --project $verificationProject -c $Configuration --no-build
         if ($LASTEXITCODE -ne 0) { throw "Windows verification failed: $LASTEXITCODE" }
+        dotnet run --project $uiVerificationProject -c $Configuration --no-build -- (Join-Path $repoRoot 'target\ui-redesign-evidence')
+        if ($LASTEXITCODE -ne 0) { throw "Windows UI verification failed: $LASTEXITCODE" }
     }
 
     $portableBase = [System.IO.Path]::GetFullPath($portableRoot)
@@ -58,11 +91,11 @@ try {
     New-Item -ItemType Directory -Path $resolvedPublish -Force | Out-Null
 
     if ($SelfContained) {
-        dotnet publish $appProject -c $Configuration -r $Runtime --self-contained true --no-restore -o $resolvedPublish
+        dotnet publish $appProject -c $Configuration -r $Runtime --self-contained true --no-restore -o $resolvedPublish @versionArguments
     } else {
         # Framework-dependent WPF publishing does not need RID runtime packs and
         # remains buildable in an offline/enterprise NuGet environment.
-        dotnet publish $appProject -c $Configuration --self-contained false --no-restore -o $resolvedPublish
+        dotnet publish $appProject -c $Configuration --self-contained false --no-restore -o $resolvedPublish @versionArguments
     }
     if ($LASTEXITCODE -ne 0) { throw "WPF publish failed: $LASTEXITCODE" }
 
@@ -143,6 +176,8 @@ try {
         "$archiveHash  $([System.IO.Path]::GetFileName($archivePath))`r`n",
         [System.Text.UTF8Encoding]::new($false))
     Write-Host "Windows package: $archivePath"
+    Write-Host "App version: $AppVersion"
+    Write-Host "Windows build name: $BuildName"
     Write-Host "Executable SHA-256: $hash"
     Write-Host "Package SHA-256: $archiveHash"
 }

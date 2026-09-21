@@ -41,6 +41,7 @@ internal static class DeliveryReliabilityVerification
             var mallory = native.RecoverIdentity("Mallory", malloryPhrase);
 
             await VerifyDurableOutboxAndPartialFanoutAsync(root, native, alice, bob);
+            await VerifySignedP2pBusinessResultsAsync(root, native, alice, bob);
             await VerifyPendingRecipientUnionAsync(root, native, alice, bob, carol);
             await VerifyMailboxPoisonPolicyAndPruningAsync(root);
             await VerifyUnknownMailboxSenderAcknowledgedAsync(root, native, alice);
@@ -136,7 +137,9 @@ internal static class DeliveryReliabilityVerification
             "next send does not reuse failed in-process reservation");
         Equal(DeliveryState.Sent, sent.DeliveryState, "successful text P2P state");
         var textChild = engine.State.PendingEnvelopes.Single(item => item.EnvelopeId == sent.EnvelopeId);
-        Equal(string.Empty, textChild.EnvelopeBase64, "successful child releases large envelope body");
+        Require(textChild.EnvelopeBase64.Length > 0, "unsigned transport ACK retains recovery ciphertext");
+        Require(textChild.Ha is { StorageState: HaStorageState.LocalPending, DeliveryState: HaDeliveryState.Pending },
+            "unsigned transport ACK cannot advance verified HA state");
         Require(!string.IsNullOrWhiteSpace(textChild.RecipientContactJson),
             "outbox child persists recipient contact");
 
@@ -152,10 +155,62 @@ internal static class DeliveryReliabilityVerification
         Equal(2, fileChildren.Length, "manifest and one chunk are represented as child envelopes");
         Require(fileChildren.All(item => item.ChildCount == 2), "file child_count metadata");
         Equal(DeliveryState.Sent, fileChildren[0].DeliveryState, "partial fanout successful child state");
-        Equal(string.Empty, fileChildren[0].EnvelopeBase64, "partial fanout successful child body released");
+        Require(fileChildren[0].EnvelopeBase64.Length > 0, "partial fanout unsigned ACK retains recovery ciphertext");
         Equal(DeliveryState.Pending, fileChildren[1].DeliveryState, "partial fanout failed child remains pending");
         Require(fileChildren[1].EnvelopeBase64.Length > 0, "pending child retains retry envelope");
         Equal(DeliveryState.Pending, fileMessage.DeliveryState, "logical message aggregates partial fanout as pending");
+    }
+
+    private static async Task VerifySignedP2pBusinessResultsAsync(string root, EnvelopeNativeClient native,
+        IdentitySummary alice, IdentitySummary bob)
+    {
+        var receiverState = StateFor(bob);
+        receiverState.Contacts.Add(new StoredContact(alice.KeyId, alice.DisplayName, native.ContactFromIdentity(alice.IdentityJson)));
+        var receiverStore = new MemoryStateStore(receiverState);
+        await using var receiver = Engine(native, receiverStore, Paths(root, "ha-p2p-receiver"));
+        await receiver.InitializeAsync();
+        var status = receiver.P2pStatus!;
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var ticket = new EnvelopeP2pTicket(receiver.State.DeviceId, [IPAddress.Loopback.ToString()], status.Port, now, now + 30 * 60_000).Encode();
+        var senderState = StateFor(alice);
+        senderState.Contacts.Add(new StoredContact(bob.KeyId, bob.DisplayName, native.ContactFromIdentity(bob.IdentityJson),
+            DeviceId: receiver.State.DeviceId, P2pTicket: ticket));
+        var senderStore = new MemoryStateStore(senderState);
+        await using var sender = Engine(native, senderStore, Paths(root, "ha-p2p-sender"));
+        await sender.InitializeAsync();
+        var text = await sender.SendTextAsync(bob.KeyId, "signed and durable");
+        Require(text.VerifiedRecipientResultJson is not null && text.VerifiedDeliveryState == HaDeliveryState.Delivered,
+            "text sender advances only on persisted recipient signature");
+        var receivedResult = receiverStore.Snapshot.RecipientResultOutbox.Single(item => item.EnvelopeId == text.EnvelopeId);
+        Require(receivedResult.SignedResultJson is not null && receivedResult.Outcome == HaDeliveryState.Delivered,
+            "recipient signature exists in durable slot before P2P ACK");
+        var child = senderStore.Snapshot.PendingEnvelopes.Single(item => item.EnvelopeId == text.EnvelopeId);
+        var beforeMessages = receiver.State.Messages.Count;
+        Require(child.EnvelopeBase64.Length == 0, "verified terminal result atomically releases recovery body");
+        var duplicate = await receiver.ImportEnvelopeAsync(text.OpaqueEnvelopeBase64, alice.KeyId);
+        Require(duplicate.Duplicate && beforeMessages == receiver.State.Messages.Count,
+            "mailbox/P2P duplicate shares durable business dedup key");
+        var source = Path.Combine(root, "ha-p2p-source.bin");
+        if (Environment.GetEnvironmentVariable("ENVELOPE_HA_LARGE_FILE_CHECK") == "1")
+        {
+            await using var large = File.Create(source);
+            large.SetLength(64L * 1024 * 1024);
+        }
+        else await File.WriteAllBytesAsync(source, [9, 8, 7, 6]);
+        var file = await sender.SendFileAsync(bob.KeyId, source, "application/test");
+        if (file.VerifiedDeliveryState != HaDeliveryState.Delivered)
+        {
+            Console.WriteLine("HA file child outcomes: " + string.Join("; ", sender.State.PendingEnvelopes
+                .Where(item => item.LogicalMessageId == file.LogicalMessageId)
+                .Select(item => $"{item.ChildIndex}:{item.DeliveryState}/{item.Ha?.DeliveryState}/{item.LastError}")));
+            foreach (var log in Directory.EnumerateFiles(Paths(root, "ha-p2p-sender").Logs, "*", SearchOption.AllDirectories))
+                foreach (var line in File.ReadLines(log).Where(line => line.Contains("p2p_delivery_failed", StringComparison.Ordinal)))
+                    Console.WriteLine(line);
+        }
+        Require(file.VerifiedDeliveryState == HaDeliveryState.Delivered && file.VerifiedRecipientResultJson is not null,
+            "completed file bundle verifies every manifest/chunk child");
+        Require(senderStore.Snapshot.PendingEnvelopes.Where(item => item.LogicalMessageId == file.LogicalMessageId)
+            .All(item => item.Ha is { DeliveryState: HaDeliveryState.Delivered }), "no file child remains at unsigned transport success");
     }
 
     private static async Task VerifyPendingRecipientUnionAsync(
@@ -1250,9 +1305,10 @@ internal static class DeliveryReliabilityVerification
                 WindowsClientState.CounterSequence(afterSameIdentityRestore.MessageCounter) >
                 WindowsClientState.CounterSequence(beforeSameIdentityRestore.MessageCounter),
             "same-identity phrase restore never reuses outbound message counter");
-        await ExpectAsync<CryptographicException>(
-            () => engine.ImportEnvelopeAsync(oldInbound.EnvelopeBase64, alice.KeyId),
-            "same-identity phrase restore rejects previously received envelope");
+        var messageCountBeforeReplay = engine.State.Messages.Count;
+        var restoredDuplicate = await engine.ImportEnvelopeAsync(oldInbound.EnvelopeBase64, alice.KeyId);
+        Require(restoredDuplicate.Duplicate && engine.State.Messages.Count == messageCountBeforeReplay,
+            "same-identity phrase restore returns durable result without reapplying received envelope");
 
         await File.WriteAllBytesAsync(Path.Combine(paths.Received, "before-clear.bin"), [4]);
         var namespaceBeforeClear = engine.State.CounterNamespace;

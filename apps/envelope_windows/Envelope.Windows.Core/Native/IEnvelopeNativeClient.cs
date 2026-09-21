@@ -8,6 +8,9 @@ namespace Envelope.Windows.Core.Native;
 /// </summary>
 public interface IEnvelopeNativeClient
 {
+    System.Text.Json.JsonElement HaV2(string requestJson) =>
+        throw new NotSupportedException("当前加密库不支持 HA v2。");
+
     ProtocolInfo GetProtocolInfo();
 
     RecoveryPhrase GenerateRecoveryPhrase();

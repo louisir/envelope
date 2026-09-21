@@ -28,7 +28,10 @@ public sealed record ChatMessageRecord(
     string? DeliveryDetail = null,
     bool IsHidden = false,
     string? LogicalMessageId = null,
-    bool IsRead = true)
+    bool IsRead = true,
+    string? VerifiedRecipientResultJson = null,
+    HaStorageState? StorageState = null,
+    HaDeliveryState? VerifiedDeliveryState = null)
 {
     [JsonIgnore]
     public DateTimeOffset CreatedAt => DateTimeOffset.FromUnixTimeMilliseconds(CreatedAtUnixMs);
@@ -83,7 +86,8 @@ public sealed record PendingEnvelopeRecord(
     int ChildIndex = 0,
     int ChildCount = 1,
     DeliveryState DeliveryState = DeliveryState.Pending,
-    string? LastRoute = null);
+    string? LastRoute = null,
+    HaOutboundState? Ha = null);
 
 public sealed record MailboxQuarantineRecord(
     string EnvelopeId,
@@ -149,12 +153,12 @@ public sealed record InboundFileChunkRecord(
 
 public sealed class WindowsClientState
 {
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
     public const int CounterNamespaceBits = 32;
     public const ulong CounterStride = 1UL << CounterNamespaceBits;
     public const ulong CounterNamespaceMask = CounterStride - 1;
 
-    public int SchemaVersion { get; init; } = CurrentSchemaVersion;
+    public int SchemaVersion { get; set; } = CurrentSchemaVersion;
     public string DeviceId { get; set; } = $"windows-{Guid.NewGuid():N}";
     public string? CurrentP2pTicket { get; set; }
     public SecureIdentityRecord? Identity { get; set; }
@@ -165,6 +169,11 @@ public sealed class WindowsClientState
     public List<GroupMemberRecord> GroupMembers { get; init; } = [];
     public List<GroupEventRecord> GroupEvents { get; init; } = [];
     public List<PendingEnvelopeRecord> PendingEnvelopes { get; init; } = [];
+    public List<HaRecipientResultDescriptor> RecipientResultOutbox { get; init; } = [];
+    public List<HaClusterWatermark> HaClusterWatermarks { get; init; } = [];
+    public string? HaClusterConfigJson { get; set; }
+    public string? HaMailboxCursor { get; set; }
+    public string? HaDeliveryPollCursor { get; set; }
     public List<SealedEnvelopeRecord> SealedEnvelopes { get; init; } = [];
     public List<ReceivedCounterRecord> ReceivedCounters { get; init; } = [];
     public List<IdentityReceivedCounterRecord> ReceivedCounterArchive { get; init; } = [];
@@ -179,10 +188,15 @@ public sealed class WindowsClientState
 
     public void Validate()
     {
-        if (SchemaVersion != CurrentSchemaVersion)
+        if (SchemaVersion is < 1 or > CurrentSchemaVersion)
         {
             throw new InvalidDataException($"不支持的 Windows 客户端状态版本：{SchemaVersion}。");
         }
+
+        // Legacy transport ACKs and mailbox receipts are not v2 recipient
+        // evidence. Migration never manufactures replicated/delivered proof.
+        SchemaVersion = CurrentSchemaVersion;
+        foreach (var pending in PendingEnvelopes) pending.Ha?.Validate(pending);
 
         if (CounterNamespace == 0 || CounterNamespace > CounterNamespaceMask)
         {

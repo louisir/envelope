@@ -5,9 +5,32 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:models="clr-namespace:Envelope.Windows.Models"
              mc:Ignorable="d">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/Envelope.Windows;component/Resources/ConversationFilterIcons.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <Style x:Key="ChatFilterIcon" TargetType="RadioButton" BasedOn="{StaticResource FilterChip}">
+                <Setter Property="Width" Value="44" />
+                <Setter Property="Height" Value="36" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="ContentTemplate">
+                    <Setter.Value>
+                        <DataTemplate>
+                            <Viewbox Width="20" Height="20">
+                                <Canvas Width="24" Height="24">
+                                    <Path Data="{Binding}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}" />
+                                </Canvas>
+                            </Viewbox>
+                        </DataTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+        </ResourceDictionary>
+    </UserControl.Resources>
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="330" />
+            <ColumnDefinition Width="280" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
@@ -20,39 +43,34 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
-                <StackPanel Margin="24,26,24,18">
-                    <TextBlock Style="{StaticResource Text.PageTitle}" Text="{DynamicResource Chat.Title}" />
-                    <TextBlock Style="{StaticResource Text.PageSubtitle}" Text="{DynamicResource Chat.Subtitle}" />
-                </StackPanel>
-                <Grid Grid.Row="1" Margin="18,0,18,14">
-                    <TextBlock Margin="13,0,0,0"
-                               VerticalAlignment="Center"
-                               Panel.ZIndex="1"
-                               FontFamily="Segoe Fluent Icons"
-                               Foreground="{DynamicResource Brush.TextMuted}"
-                               IsHitTestVisible="False"
-                               Text="&#xE721;" />
-                    <TextBox Style="{StaticResource TextBox.Search}"
-                             Tag="{DynamicResource Chat.Search}"
-                             Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                             ToolTip="{DynamicResource Chat.Search}" />
+                <Grid Margin="14,18,12,10">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="38"/></Grid.ColumnDefinitions>
+                    <TextBox Style="{StaticResource TextBox.Search}" Tag="{DynamicResource Chat.Search}" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" ToolTip="{DynamicResource Chat.Search}"/>
+                    <TextBlock Text="&#xE721;" FontFamily="Segoe Fluent Icons" Margin="13,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False" Foreground="{DynamicResource Brush.TextMuted}"/>
+                    <Button Grid.Column="1" Margin="5,0,0,0" Content="+" FontSize="23" Padding="0" Command="{Binding OpenContactsCommand}" Style="{StaticResource Button.Quiet}" ToolTip="{DynamicResource Chat.New}"/>
                 </Grid>
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="14,0,8,12">
+                    <RadioButton Content="{StaticResource Icon.Filter.All}" IsChecked="{Binding FilterAll}" GroupName="ConversationFilter" Style="{StaticResource ChatFilterIcon}" ToolTip="{DynamicResource Chat.FilterAll}" AutomationProperties.Name="{DynamicResource Chat.FilterAll}"/>
+                    <RadioButton Content="{StaticResource Icon.Filter.Unread}" IsChecked="{Binding FilterUnread}" GroupName="ConversationFilter" Style="{StaticResource ChatFilterIcon}" ToolTip="{DynamicResource Chat.FilterUnread}" AutomationProperties.Name="{DynamicResource Chat.FilterUnread}"/>
+                    <RadioButton Content="{StaticResource Icon.Filter.Groups}" IsChecked="{Binding FilterGroups}" GroupName="ConversationFilter" Style="{StaticResource ChatFilterIcon}" ToolTip="{DynamicResource Chat.FilterGroups}" AutomationProperties.Name="{DynamicResource Chat.FilterGroups}"/>
+                </StackPanel>
                 <Grid Grid.Row="2">
                     <ListBox ItemsSource="{Binding VisibleConversations}"
                              SelectedItem="{Binding SelectedConversation, Mode=TwoWay}">
                         <ListBox.ItemContainerStyle>
                             <Style TargetType="ListBoxItem">
+                                <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
                                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                 <Setter Property="Margin" Value="8,3" />
-                                <Setter Property="Padding" Value="11" />
+                                <Setter Property="Padding" Value="10" />
                                 <Setter Property="Cursor" Value="Hand" />
                                 <Setter Property="Template">
                                     <Setter.Value>
                                         <ControlTemplate TargetType="ListBoxItem">
                                             <Border x:Name="Item"
                                                     Padding="{TemplateBinding Padding}"
-                                                    Background="Transparent"
-                                                    CornerRadius="10">
+                                                    Background="Transparent" BorderBrush="Transparent" BorderThickness="1"
+                                                    CornerRadius="8">
                                                 <ContentPresenter />
                                             </Border>
                                             <ControlTemplate.Triggers>
@@ -60,6 +78,7 @@
                                                     <Setter TargetName="Item" Property="Background" Value="{DynamicResource Brush.SurfaceAlt}" />
                                                 </Trigger>
                                                 <Trigger Property="IsSelected" Value="True">
+                                                    <Setter TargetName="Item" Property="BorderBrush" Value="{DynamicResource Brush.Brand}"/>
                                                     <Setter TargetName="Item" Property="Background" Value="{DynamicResource Brush.AccentSoft}" />
                                                 </Trigger>
                                             </ControlTemplate.Triggers>
@@ -84,12 +103,12 @@
                                                    Text="{Binding Initials}" />
                                     </Border>
                                     <StackPanel Grid.Column="1" Margin="2,0,6,0">
-                                        <TextBlock FontSize="13"
+                                        <TextBlock FontSize="14"
                                                    FontWeight="SemiBold"
                                                    Text="{Binding DisplayName}"
                                                    TextTrimming="CharacterEllipsis" />
                                         <TextBlock Margin="0,4,0,0"
-                                                   FontSize="11"
+                                                   FontSize="12"
                                                    Foreground="{DynamicResource Brush.TextMuted}"
                                                    Text="{Binding Preview}"
                                                    TextTrimming="CharacterEllipsis" />
@@ -103,7 +122,7 @@
                                                 Margin="0,6,0,0"
                                                 Padding="5,0"
                                                 HorizontalAlignment="Right"
-                                                Background="{DynamicResource Brush.Accent}"
+                                                Background="#EF4444"
                                                 CornerRadius="10">
                                             <TextBlock HorizontalAlignment="Center"
                                                        VerticalAlignment="Center"
@@ -235,11 +254,6 @@
                                     </Style>
                                 </Button.Style>
                             </Button>
-                            <Button Margin="0,0,7,0"
-                                    Command="{Binding SealCommand}"
-                                    Content="&#xE72E;"
-                                    Style="{StaticResource Button.Icon}"
-                                    ToolTip="{DynamicResource Chat.Seal}" />
                         </StackPanel>
                     </Grid>
                 </Border>
@@ -298,12 +312,13 @@
 
                     <ListBox x:Name="MessageList"
                              Grid.Row="1"
-                             Padding="22,58,22,16"
+                             Padding="24,45,24,16"
                              ItemsSource="{Binding Messages}"
                              SelectionMode="Extended"
                              ScrollViewer.CanContentScroll="True">
                         <ListBox.ItemContainerStyle>
                             <Style TargetType="ListBoxItem">
+                                <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
                                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                 <Setter Property="Focusable" Value="True" />
                                 <Setter Property="Margin" Value="0,4" />
@@ -312,18 +327,22 @@
                         <ListBox.ItemTemplate>
                             <DataTemplate>
                                 <Grid>
+                                    <Border x:Name="MessageAvatar" Width="32" Height="32" CornerRadius="16" Background="{DynamicResource Brush.AccentSoft}" HorizontalAlignment="Left" VerticalAlignment="Top">
+                                        <TextBlock x:Name="MessageAvatarText" Text="{Binding DataContext.SelectedConversation.Initials, RelativeSource={RelativeSource AncestorType=UserControl}}" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource Brush.Accent}" FontSize="13"/>
+                                    </Border>
                                     <Border x:Name="Bubble"
                                             MaxWidth="520"
+                                            Margin="44,0,0,0"
                                             Padding="13,10"
                                             HorizontalAlignment="Left"
                                             Background="{DynamicResource Brush.MessageOther}"
                                             BorderBrush="{DynamicResource Brush.Border}"
                                             BorderThickness="1"
-                                            CornerRadius="12">
+                                            CornerRadius="8">
                                         <StackPanel>
                                             <TextBlock x:Name="MessageText"
-                                                       FontSize="13"
-                                                       LineHeight="19"
+                                                       FontSize="14"
+                                                       LineHeight="22"
                                                        Text="{Binding Text}"
                                                        TextWrapping="Wrap" />
                                             <Button Margin="0,8,0,0"
@@ -374,9 +393,12 @@
                                                            FontFamily="Segoe Fluent Icons"
                                                            FontSize="9"
                                                            Foreground="{DynamicResource Brush.TextSubtle}"
-                                                           Text="&#xE73E;" />
-                                                <Button Width="24"
-                                                        Height="20"
+                                                           Text="&#xE895;" />
+                                                <TextBlock x:Name="DeliveryCaption" Margin="4,0,0,0" FontSize="9"
+                                                           Foreground="{DynamicResource Brush.TextSubtle}"
+                                                           Text="{DynamicResource Chat.DeliveryPending}" />
+                                                <Button Width="20"
+                                                        MinHeight="18" Height="18"
                                                         Margin="6,-4,-6,-4"
                                                         Padding="0"
                                                         Command="{Binding DataContext.DeleteMessageCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
@@ -392,15 +414,49 @@
                                 </Grid>
                                 <DataTemplate.Triggers>
                                     <DataTrigger Binding="{Binding Direction}" Value="{x:Static models:MessageDirection.Outgoing}">
+                                        <Setter TargetName="MessageAvatar" Property="HorizontalAlignment" Value="Right" />
+                                        <Setter TargetName="MessageAvatarText" Property="Text" Value="{Binding DataContext.ProfileInitial, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                        <Setter TargetName="Bubble" Property="Margin" Value="0,0,44,0" />
                                         <Setter TargetName="Bubble" Property="HorizontalAlignment" Value="Right" />
                                         <Setter TargetName="Bubble" Property="Background" Value="{DynamicResource Brush.MessageMine}" />
-                                        <Setter TargetName="Bubble" Property="BorderBrush" Value="{DynamicResource Brush.MessageMine}" />
-                                        <Setter TargetName="MessageText" Property="Foreground" Value="White" />
-                                        <Setter TargetName="MessageTime" Property="Foreground" Value="#FFD8EEE7" />
-                                        <Setter TargetName="DeliveryGlyph" Property="Foreground" Value="#FFD8EEE7" />
+                                        <Setter TargetName="Bubble" Property="BorderBrush" Value="{DynamicResource Brush.Border}" />
+                                        <Setter TargetName="MessageText" Property="Foreground" Value="{DynamicResource Brush.Text}" />
+                                        <Setter TargetName="MessageTime" Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+                                        <Setter TargetName="DeliveryGlyph" Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+                                        <Setter TargetName="DeliveryCaption" Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
                                     </DataTrigger>
                                     <DataTrigger Binding="{Binding Direction}" Value="{x:Static models:MessageDirection.Incoming}">
                                         <Setter TargetName="DeliveryGlyph" Property="Visibility" Value="Collapsed" />
+                                        <Setter TargetName="DeliveryCaption" Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding DeliveryState}" Value="{x:Static models:MessageDeliveryState.Sent}">
+                                        <Setter TargetName="DeliveryCaption" Property="Text" Value="{DynamicResource Chat.DeliverySent}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding DeliveryState}" Value="{x:Static models:MessageDeliveryState.Delivered}">
+                                        <Setter TargetName="DeliveryCaption" Property="Text" Value="{DynamicResource Chat.DeliveryDelivered}" />
+                                        <Setter TargetName="DeliveryGlyph" Property="Text" Value="&#xE73E;" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding DeliveryState}" Value="{x:Static models:MessageDeliveryState.LegacyUnverified}">
+                                        <Setter TargetName="DeliveryCaption" Property="Text" Value="{DynamicResource Chat.DeliveryLegacy}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding DeliveryState}" Value="{x:Static models:MessageDeliveryState.Failed}">
+                                        <Setter TargetName="DeliveryCaption" Property="Text" Value="{DynamicResource Chat.DeliveryFailed}" />
+                                        <Setter TargetName="DeliveryGlyph" Property="Text" Value="&#xE783;" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding DeliveryState}" Value="{x:Static models:MessageDeliveryState.StagedSingle}">
+                                        <Setter TargetName="DeliveryCaption" Property="Text" Value="{DynamicResource Chat.DeliveryStaged}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding DeliveryState}" Value="{x:Static models:MessageDeliveryState.Replicated}">
+                                        <Setter TargetName="DeliveryCaption" Property="Text" Value="{DynamicResource Chat.DeliveryReplicated}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding DeliveryState}" Value="{x:Static models:MessageDeliveryState.Deferred}">
+                                        <Setter TargetName="DeliveryCaption" Property="Text" Value="{DynamicResource Chat.DeliveryDeferred}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding DeliveryState}" Value="{x:Static models:MessageDeliveryState.Rejected}">
+                                        <Setter TargetName="DeliveryCaption" Property="Text" Value="{DynamicResource Chat.DeliveryRejected}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding DeliveryState}" Value="{x:Static models:MessageDeliveryState.Expired}">
+                                        <Setter TargetName="DeliveryCaption" Property="Text" Value="{DynamicResource Chat.DeliveryExpired}" />
                                     </DataTrigger>
                                 </DataTemplate.Triggers>
                             </DataTemplate>
@@ -429,8 +485,11 @@
                         </Button>
                         <Button Command="{Binding DeleteSelectedMessagesCommand}"
                                 CommandParameter="{Binding SelectedItems, ElementName=MessageList}"
-                                Content="{DynamicResource Chat.DeleteSelected}"
-                                Style="{StaticResource Button.Quiet}" />
+                                Content="{DynamicResource Chat.DeleteSelected}">
+                            <Button.Style><Style TargetType="Button" BasedOn="{StaticResource Button.Quiet}">
+                                <Style.Triggers><DataTrigger Binding="{Binding SelectedItems.Count, ElementName=MessageList}" Value="0"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers>
+                            </Style></Button.Style>
+                        </Button>
                     </StackPanel>
 
                     <StackPanel Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center">
@@ -464,44 +523,22 @@
                     </StackPanel>
                 </Grid>
 
-                <Border Grid.Row="2"
-                        Padding="18,13,18,17"
-                        Background="{DynamicResource Brush.Surface}"
-                        BorderBrush="{DynamicResource Brush.Border}"
-                        BorderThickness="0,1,0,0">
+                <Border Grid.Row="2" Padding="18,10,18,14" Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0">
                     <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <Button Margin="0,0,9,0"
-                                Command="{Binding AttachFileCommand}"
-                                Content="&#xE898;"
-                                Style="{StaticResource Button.Icon}"
-                                ToolTip="{DynamicResource Chat.AttachFile}" />
-                        <TextBox x:Name="Composer"
-                                 Grid.Column="1"
-                                 MinHeight="42"
-                                 MaxHeight="120"
-                                 AcceptsReturn="True"
-                                 IsEnabled="{Binding HasSelection}"
-                                 PreviewKeyDown="Composer_PreviewKeyDown"
-                                 Tag="{DynamicResource Chat.MessagePlaceholder}"
-                                 Text="{Binding MessageText, UpdateSourceTrigger=PropertyChanged}"
-                                 TextWrapping="Wrap"
-                                 ToolTip="{DynamicResource Chat.MessagePlaceholder}"
-                                 VerticalScrollBarVisibility="Auto" />
-                        <Button Grid.Column="2"
-                                MinWidth="82"
-                                Margin="9,0,0,0"
-                                Command="{Binding SendCommand}"
-                                Style="{StaticResource Button.Primary}">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Margin="0,0,7,0" FontFamily="Segoe Fluent Icons" Text="&#xE724;" />
-                                <TextBlock Text="{DynamicResource Chat.Send}" />
-                            </StackPanel>
-                        </Button>
+                        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="100"/><RowDefinition Height="38"/></Grid.RowDefinitions>
+                        <StackPanel x:Name="ComposerToolbar" Orientation="Horizontal" Margin="0,0,0,4">
+                            <Button Command="{Binding AttachFileCommand}" Content="&#xE898;" Style="{StaticResource Button.Icon}" ToolTip="{DynamicResource Chat.AttachFile}"/>
+                            <Button Command="{Binding SealCommand}" Style="{StaticResource Button.Quiet}" Margin="10,0,0,0" Height="38" VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE715;" FontFamily="Segoe Fluent Icons" Margin="0,0,8,0"/><TextBlock Text="{DynamicResource Chat.SealOffline}"/></StackPanel>
+                            </Button>
+                        </StackPanel>
+                        <TextBox x:Name="Composer" Grid.Row="1" Margin="0,6,0,6" AcceptsReturn="True" IsEnabled="{Binding HasSelection}"
+                                 PreviewKeyDown="Composer_PreviewKeyDown" Tag="{DynamicResource Chat.MessagePlaceholder}"
+                                 Text="{Binding MessageText, UpdateSourceTrigger=PropertyChanged}" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top"/>
+                        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
+                            <TextBlock Text="{DynamicResource Chat.ComposerHint}" Foreground="{DynamicResource Brush.TextSubtle}" FontSize="11" Margin="0,0,14,0" VerticalAlignment="Center"/>
+                            <Button MinWidth="80" Command="{Binding SendCommand}" Content="{DynamicResource Chat.Send}" Style="{StaticResource Button.Primary}"/>
+                        </StackPanel>
                     </Grid>
                 </Border>
 

@@ -39,7 +39,7 @@ public sealed class ThemeService : IThemeService
         var dictionaries = Application.Current.Resources.MergedDictionaries;
         var replacement = new ResourceDictionary
         {
-            Source = new Uri($"Resources/Themes/{themeName}.xaml", UriKind.Relative),
+            Source = new Uri($"/Envelope.Windows;component/Resources/Themes/{themeName}.xaml", UriKind.Relative),
         };
 
         var index = FindDictionaryIndex(dictionaries);

@@ -37,6 +37,7 @@ public enum UiAction
     ClearFileCache,
     ExportDiagnostics,
     ClearDiagnostics,
+    ChangeUnlockCode,
     OpenUserManual,
     OpenSourceRepository,
     OpenLicense,

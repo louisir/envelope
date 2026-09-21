@@ -34,6 +34,7 @@ class EnvelopeServerClient {
   final EnvelopeNative? nativeCore;
   final List<Uri> _bootstrapUris;
   Uri? _lastUsedBaseUri;
+  Future<NodeSetManifest?>? _manifestRefresh;
 
   static NodeSetManifest? _cachedManifest;
   static final Map<String, int> _verifiedNodeEpochByUri = <String, int>{};
@@ -213,6 +214,18 @@ class EnvelopeServerClient {
   }
 
   Future<NodeSetManifest?> _refreshNodeManifest({bool force = false}) async {
+    final pending = _manifestRefresh;
+    if (pending != null) return pending;
+    final refresh = _loadNodeManifest(force: force);
+    _manifestRefresh = refresh;
+    try {
+      return await refresh;
+    } finally {
+      if (identical(_manifestRefresh, refresh)) _manifestRefresh = null;
+    }
+  }
+
+  Future<NodeSetManifest?> _loadNodeManifest({bool force = false}) async {
     final native = nativeCore;
     if (native == null) return _cachedManifest;
     final cached = _cachedManifest;
@@ -255,7 +268,6 @@ class EnvelopeServerClient {
           accepted = manifest;
           _cachedManifest = manifest;
         }
-        _lastUsedBaseUri = candidate;
         return accepted;
       } catch (error) {
         if (!_shouldTryNextNode(error)) rethrow;
@@ -330,6 +342,7 @@ class EnvelopeServerClient {
     final request = await _httpClient
         .openUrl(method, base.resolve(path))
         .timeout(_envelopeServerRequestTimeout);
+    request.followRedirects = false;
     request.headers.set(HttpHeaders.acceptHeader, 'application/json');
     if (body != null) {
       request.headers.contentType = ContentType.json;

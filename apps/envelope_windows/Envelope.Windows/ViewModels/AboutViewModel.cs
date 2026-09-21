@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.RegularExpressions;
 using Envelope.Windows.Models;
 using Envelope.Windows.Services;
 
@@ -14,11 +15,13 @@ public sealed class AboutViewModel : PageViewModel
         _workspace = workspace;
         var assembly = Assembly.GetExecutingAssembly();
         Version = assembly.GetName().Version?.ToString(3) ?? "0.1.0";
-        Build = assembly
+        FullVersion = assembly
                     .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
                     .InformationalVersion
                     .Split('+')[0]
                 ?? Version;
+        var buildTimestamp = Regex.Match(FullVersion, @"^v?\d+\.\d+\.\d+\.(\d{14}(?:\.\d{3})?)$", RegexOptions.IgnoreCase);
+        Build = buildTimestamp.Success ? buildTimestamp.Groups[1].Value : "—";
 
         OpenManualCommand = new AsyncRelayCommand(_ => ExecuteAsync(UiAction.OpenUserManual));
         OpenSourceCommand = new AsyncRelayCommand(_ => ExecuteAsync(UiAction.OpenSourceRepository));
@@ -26,6 +29,8 @@ public sealed class AboutViewModel : PageViewModel
     }
 
     public string Version { get; }
+
+    public string FullVersion { get; }
 
     public string Build { get; }
 

@@ -130,7 +130,7 @@ public sealed partial class EnvelopeClientEngine
                 details.Add($"{child.Label}: {delivery.Route}");
             }
             var aggregate = AggregateLogicalDeliveryStateCore(logicalMessageId);
-            message = stagedMessage with
+            message = (_state.Messages.FirstOrDefault(item => item.EnvelopeId == stagedMessage.EnvelopeId) ?? stagedMessage) with
             {
                 DeliveryState = aggregate,
                 DeliveryDetail = string.Join(Environment.NewLine, details),
@@ -271,7 +271,7 @@ public sealed partial class EnvelopeClientEngine
             }
 
             var aggregate = AggregateLogicalDeliveryStateCore(logicalMessageId);
-            message = stagedMessage with
+            message = (_state.Messages.FirstOrDefault(item => item.EnvelopeId == stagedMessage.EnvelopeId) ?? stagedMessage) with
             {
                 DeliveryState = aggregate,
                 DeliveryDetail = string.Join(Environment.NewLine, details),
@@ -610,6 +610,7 @@ public sealed partial class EnvelopeClientEngine
                     total += bytes.Length;
                     await destination.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
                 }
+                destination.Flush(flushToDisk: true);
             }
 
             if (total != transfer.TotalSize || EncodeBase64Url(wholeHash.GetHashAndReset()) != transfer.FileSha256)

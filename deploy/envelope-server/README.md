@@ -1,5 +1,7 @@
 # Envelope Server 部署说明
 
+状态说明（2026-09-20）：下文对应现有 v1/MVP。首版主备目标及 etcd + 双 SQLite 的选型见 [主设计第 16 节](../../docs/design.md#16-首版主备实现设计--first-release-ha-implementation-design) 和 [主备协议](../../docs/relay-ha-protocol.md)，尚未实现。执行本文件的现有脚本不会自动获得双副本确认、仲裁或 v2 自动接管；新部署脚本与故障验证须随实现交付。
+
 目标环境：可公网访问的 VPS，Ubuntu / Debian 系发行版。
 
 当前部署的是 Envelope Server MVP：HTTPS 入口后面挂一个本机 `envelope-server` 服务，SQLite 数据保存在 `/var/lib/envelope-server/envelope-server.sqlite3`。服务器只保存签名 endpoint 和 opaque envelope bytes，不解密消息。

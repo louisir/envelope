@@ -23,7 +23,41 @@ state slot is separately encrypted with AES-256-GCM and authenticated with its s
 name. User-visible received, sealed, backup, and diagnostic exports live under
 `%USERPROFILE%\Downloads\Envelope`.
 
+On startup, the app registers the current user as the handler for
+`envelope://` and `.envelope` files (`application/vnd.westwardsoft.envelope`).
+`envelope://yourturn/open` activates the existing app instance and opens the
+Unseal page. Opening a `.envelope` file imports that exact file; when no local
+identity exists yet, the path remains pending until identity creation or
+recovery completes.
+
 ## Build
+
+### Desktop messenger shell
+
+The window opens on Messages with a 68 px navigation rail, a 280 px conversation
+list, and a persistent composer. Light mode uses Android's orange/cream palette
+and gray-green outgoing bubbles. The application icon embeds the original Android
+launcher PNGs; `scripts/sync-windows-brand-assets.ps1` regenerates the PNG/ICO assets.
+
+Closing the window hides it to the Windows notification area while background
+sync continues. The tray menu provides Open, temporary Do not disturb, Lock,
+Settings, and Quit. Notifications show only unread counts. Reading requires the
+selected chat to be visible and active; hidden windows and other pages preserve
+unread messages. Manual Lock requires the app's six-digit unlock code when reopened.
+Quit stops background reception. Windows notification settings can suppress popups.
+
+`Envelope.Windows.UiTests` checks these UI boundaries and renders all pages using
+isolated example data; this does not exercise real peer delivery. Local unlock uses
+the app's six-digit code (initially `123456`), configurable in Settings → Security.
+The bundled `windows-user-manual.html` provides matching Simplified Chinese and
+English instructions, including platform-specific locking, tray behavior, and HA delivery states.
+For isolated process smoke tests, use `ENVELOPE_LOCAL_APPDATA_ROOT`,
+`ENVELOPE_PROFILE_ROOT`, and `ENVELOPE_SKIP_SHELL_REGISTRATION=1` to avoid changing
+the user's state or file associations. These variables are not required normally.
+
+Use `-SelfContained -PackageSuffix <version>` to produce a versioned ZIP without
+replacing the previous portable package. Extract the entire ZIP before starting
+`Envelope.Windows.exe`; keep the DLLs and runtime files beside it.
 
 From the repository root:
 
@@ -45,6 +79,15 @@ use `-SelfContained` to create a package that includes the .NET runtime:
 
 ```powershell
 .\scripts\build-windows-wpf.ps1 -SelfContained
+```
+
+`build-windows-wpf.ps1` accepts the same `-AppVersion` and `-BuildName`
+arguments as the Android build. To guard the shared FFI and wire constants and
+produce both packages with exactly one version value, run:
+
+```powershell
+.\scripts\verify-client-parity.ps1
+.\scripts\build-client-pair.ps1 -AppVersion v1.0.1.202609210001 -BuildName 1.0.1
 ```
 
 For an ordinary development build:

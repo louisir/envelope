@@ -242,7 +242,10 @@ class EnvelopeNative {
           .lookupFunction<
             _NativeCreateDeliveryStatusRequest,
             _DartCreateDeliveryStatusRequest
-          >('envelope_ffi_create_delivery_status_request');
+          >('envelope_ffi_create_delivery_status_request'),
+      _haV2 = library.lookupFunction<_NativeParseContact, _DartParseContact>(
+        'envelope_ffi_ha_v2',
+      );
 
   final _DartFree _free;
   final _DartNoArg _protocolInfo;
@@ -267,6 +270,7 @@ class EnvelopeNative {
   final _DartCreateEnvelopeSubmitRequest _createEnvelopeSubmitRequest;
   final _DartCreateMailboxAckRequest _createMailboxAckRequest;
   final _DartCreateDeliveryStatusRequest _createDeliveryStatusRequest;
+  final _DartParseContact _haV2;
 
   static EnvelopeNative load(Directory repoRoot) {
     if (Platform.isAndroid) {
@@ -831,6 +835,21 @@ class EnvelopeNative {
     } finally {
       malloc.free(identityPtr);
       malloc.free(envelopeIdsPtr);
+    }
+  }
+
+  /// Shared Rust HA v2 signing and policy verification. A missing export is a
+  /// package incompatibility; it must never fall back to v1 verification.
+  Map<String, Object?> haV2(Map<String, Object?> request) {
+    final pointer = jsonEncode(request).toNativeUtf8();
+    try {
+      final value = _decodeResponse(_takeString(_haV2(pointer)));
+      if (value is! Map) {
+        throw const EnvelopeNativeException('HA v2 result must be an object');
+      }
+      return value.cast<String, Object?>();
+    } finally {
+      malloc.free(pointer);
     }
   }
 

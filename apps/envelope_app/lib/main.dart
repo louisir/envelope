@@ -17,7 +17,10 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'app_localizations.dart';
 import 'android_chat_store.dart';
 import 'android_db_store.dart';
+import 'android_mailbox_reliability.dart';
 import 'android_p2p.dart';
+import 'android_relay_ha_adapter.dart';
+import 'android_relay_ha_client.dart';
 import 'android_server.dart';
 import 'android_secure_store.dart';
 import 'diagnostic_log.dart';
@@ -25,13 +28,13 @@ import 'envelope_native.dart';
 
 const String _defaultDisplayName = 'Envelope User';
 const String _defaultDesktopMessageHint = '你好，这是一条来自 Envelope UI 的消息。';
-const String _defaultEnvelopeServerUrl = '';
+const String _defaultEnvelopeServerUrl = 'https://envelope.iamlouis.online';
 const String _androidUserManualAsset = 'assets/manual/android-user-manual.html';
 const String _sourceRepositoryUrl = 'https://github.com/louisir/envelope';
 const String _appLicense = 'AGPL-3.0-or-later';
 const String _appDisplayVersion = String.fromEnvironment(
   'ENVELOPE_APP_VERSION',
-  defaultValue: 'v1.0.0.dev',
+  defaultValue: 'v1.0.1.dev',
 );
 const bool _adbBridgeEnabled = bool.fromEnvironment(
   'ENVELOPE_ADB_BRIDGE',
@@ -44,8 +47,14 @@ const int _androidOnlineFileChunkBytes = 4 * 1024 * 1024;
 const int _androidOfflineFileChunkBytes = 4 * 1024 * 1024;
 const int _androidOfflineStreamReadBytes = 1024 * 1024;
 const int _androidLegacyOfflineEnvelopeMaxBytes = 32 * 1024 * 1024;
+const int _androidMaximumOfflineGroupRecipients = 1024;
+const int _androidMaximumOfflineGroupChunks = 100000;
+const int _androidMaximumOfflineGroupEnvelopeLines = 1000000;
+const int _androidMaximumOfflineEnvelopeLineCharacters = 12 * 1024 * 1024;
+const int _androidMaximumStagedOutboundEnvelopeBytes = 256 * 1024 * 1024;
 const String _androidOfflineStreamMagic = 'ENVELOPE_STREAM_V1';
 const String _androidOfflineGroupStreamMagic = 'ENVELOPE_GROUP_STREAM_V1';
+const String _androidEnvelopeFileMime = 'application/vnd.westwardsoft.envelope';
 const String _androidFileManifestMime =
     'application/vnd.westwardsoft.envelope.file-manifest+json';
 const String _androidFileChunkMime =
@@ -136,6 +145,36 @@ class _AndroidMemberDeliveryResult {
   final String? envelopeId;
 }
 
+class _AndroidStagedEnvelopeDraft {
+  const _AndroidStagedEnvelopeDraft({
+    required this.contact,
+    required this.recipientDisplayName,
+    required this.envelopeId,
+    required this.envelopeBase64,
+    required this.childIndex,
+  });
+
+  final AndroidContactRecord contact;
+  final String recipientDisplayName;
+  final String envelopeId;
+  final String envelopeBase64;
+  final int childIndex;
+}
+
+class _AndroidDeferredMailboxRetryResult {
+  const _AndroidDeferredMailboxRetryResult({
+    required this.imported,
+    required this.duplicates,
+    required this.quarantined,
+    required this.items,
+  });
+
+  final int imported;
+  final int duplicates;
+  final int quarantined;
+  final List<Map<String, Object?>> items;
+}
+
 void main() {
   runApp(const EnvelopeApp());
 }
@@ -204,9 +243,12 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
   static const MethodChannel _adbBridgeChannel = MethodChannel(
     'com.iamlouis.envelope/adb_bridge',
   );
+  static const MethodChannel _externalOpenChannel = MethodChannel(
+    'com.iamlouis.envelope/external_open',
+  );
   static const int _androidMessagesPageSize = 50;
   static const Duration _androidMailboxForegroundPullInterval = Duration(
-    seconds: 2,
+    seconds: 5,
   );
   static const Duration _androidLocalLockResumeGrace = Duration(seconds: 30);
   static const Duration _recoveryPhraseVisibleTimeout = Duration(minutes: 2);
@@ -235,6 +277,10 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
   late final String _defaultSendOutputPath;
   late final AndroidSecureIdentityStore _secureStore;
   late final AndroidP2pTransport _androidP2p;
+  Future<AndroidRelayHaClient>? _androidRelayClient;
+  bool _androidRelaySyncInFlight = false;
+  DateTime? _androidRelayRetryAfter;
+  int _androidRelayOutboxOffset = 0;
 
   DiagnosticLogService? _diagnosticLog;
   bool _busy = false;
@@ -290,8 +336,6 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
   _AndroidConversationFilter _androidConversationFilter =
       _AndroidConversationFilter.all;
   final Set<String> _selectedAndroidMessageIds = <String>{};
-  final Map<String, int> _seenIncomingMessageCounts = <String, int>{};
-  final Map<String, int> _seenIncomingConversationCounts = <String, int>{};
   List<ContactRow> _contacts = const [];
   List<MessageRow> _messages = const [];
   EnvelopeNative? _native;
@@ -299,6 +343,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
   Process? _p2pProcess;
   Timer? _androidMailboxPullTimer;
   Timer? _androidAutoBackupTimer;
+  AndroidPickedFile? _pendingExternalEnvelopeFile;
   Timer? _recoveryPhraseClearTimer;
   StreamSubscription<String>? _p2pStdoutSubscription;
   StreamSubscription<String>? _p2pStderrSubscription;
@@ -360,6 +405,10 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     if (Platform.isAndroid && _adbBridgeEnabled) {
       _adbBridgeChannel.setMethodCallHandler(_handleAdbBridgeCall);
     }
+    if (Platform.isAndroid) {
+      _externalOpenChannel.setMethodCallHandler(_handleExternalOpenCall);
+      unawaited(_consumeInitialExternalOpen());
+    }
     unawaited(_initializeAndroidLocalLock());
     unawaited(_loadAndroidRuntimeSecurityInfo());
     unawaited(_refreshSecureIdentity());
@@ -399,11 +448,18 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     if (Platform.isAndroid && _adbBridgeEnabled) {
       _adbBridgeChannel.setMethodCallHandler(null);
     }
+    if (Platform.isAndroid) {
+      _externalOpenChannel.setMethodCallHandler(null);
+    }
     unawaited(_p2pStdoutSubscription?.cancel());
     unawaited(_p2pStderrSubscription?.cancel());
     _p2pProcess?.kill();
     _androidMailboxPullTimer?.cancel();
     _androidAutoBackupTimer?.cancel();
+    final relay = _androidRelayClient;
+    if (relay != null) {
+      unawaited(relay.then((client) => client.close(), onError: (Object _) {}));
+    }
     unawaited(_androidP2p.stop());
     super.dispose();
   }
@@ -586,10 +642,20 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     final normalized = _normalizeEnvelopeServerUrlInput(
       _envelopeServerUrlController.text,
     );
+    if (Uri.parse(normalized).scheme != 'https') {
+      throw const EnvelopeServerException('主备中继入口必须使用 HTTPS。');
+    }
     if (_secureStore.isSupported) {
       await _secureStore.writeSyncServiceUrl(normalized);
     }
     EnvelopeServerClient.clearNodeCache();
+    final priorRelay = _androidRelayClient;
+    _androidRelayClient = null;
+    if (priorRelay != null) {
+      unawaited(
+        priorRelay.then((client) => client.close(), onError: (Object _) {}),
+      );
+    }
     _androidServerRegistrationTicketByUri.clear();
     if (!mounted) return;
     setState(() {
@@ -685,11 +751,15 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
   Future<void> _pullAndroidServerMailboxSilently() async {
     if (!mounted || !Platform.isAndroid || !_secureStore.isSupported) return;
     if (_configuredEnvelopeServerUrl.isEmpty) return;
-    if (_androidMailboxPullInFlight) return;
+    if (_androidMailboxPullInFlight || _androidRelaySyncInFlight) return;
+    final retryAfter = _androidRelayRetryAfter;
+    if (retryAfter != null && DateTime.now().isBefore(retryAfter)) return;
+    _androidRelaySyncInFlight = true;
     final startedAt = DateTime.now();
     try {
       await _refreshSecureIdentity(startP2p: false);
       if (!mounted || _secureIdentity == null) return;
+      await _reconcileAndroidRelayOutbox();
       final pull = await _pullAndroidServerMailbox(
         updateDetails: false,
         refreshIdentity: false,
@@ -700,18 +770,166 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         'pulled': pull['pulled'],
         'imported': pull['imported'],
         'duplicates': pull['duplicates'],
+        'quarantined': pull['quarantined'],
+        'deferred_remaining': pull['deferred_remaining'],
         'acked': pull['acked'],
         'delivery_checked': receipts?['checked'],
         'delivery_delivered': receipts?['delivered'],
         'elapsed_ms': DateTime.now().difference(startedAt).inMilliseconds,
       });
     } catch (error) {
+      if (error is RelayHaException && error.code == 'RATE_LIMITED') {
+        _androidRelayRetryAfter = DateTime.now().add(
+          error.retryAfter ?? const Duration(seconds: 30),
+        );
+      }
       _markAndroidMessageSyncFailed(error);
       _logDiagnostic('warn', 'mailbox_auto_sync_failure', {
         'error': error.toString(),
         'elapsed_ms': DateTime.now().difference(startedAt).inMilliseconds,
       });
       debugPrint('Envelope mailbox auto-pull failed: $error');
+    } finally {
+      _androidRelaySyncInFlight = false;
+    }
+  }
+
+  Future<void> _reconcileAndroidRelayOutbox() async {
+    final db = await _ensureAndroidDbStore();
+    final identity = _requireAndroidIdentity();
+    final adapter = _createEnvelopeServerClient() as AndroidRelayHaAdapter;
+    try {
+      await adapter.health();
+      await _ensureAndroidServerEndpointRegisteredForClient(adapter);
+      final allPending = (await db.relayHa.pendingOutgoing(
+        includeBodies: false,
+        includeExpired: true,
+      )).where((row) => row['sender_key_id'] == identity.keyId).toList();
+      if (_androidRelayOutboxOffset >= allPending.length) {
+        _androidRelayOutboxOffset = 0;
+      }
+      final pending = allPending
+          .skip(_androidRelayOutboxOffset)
+          .take(100)
+          .toList();
+      _androidRelayOutboxOffset += pending.length;
+      if (pending.isNotEmpty) {
+        await _withAndroidServerRegistrationRetry(
+          client: adapter,
+          request: () => adapter.deliveryStatus(
+            senderKeyId: identity.keyId,
+            statusRequestJson: jsonEncode({
+              'envelope_ids': pending.map((row) => row['envelope_id']).toList(),
+            }),
+          ),
+        );
+      }
+      var submitted = 0;
+      for (final prior in pending) {
+        final row = await db.relayHa.outgoing(
+          senderKeyId: identity.keyId,
+          recipientKeyId: prior['recipient_key_id'] as String,
+          envelopeId: prior['envelope_id'] as String,
+        );
+        if (row == null ||
+            row['delivery_state'] == 'delivered' ||
+            row['delivery_state'] == 'rejected' ||
+            row['delivery_state'] == 'expired' ||
+            row['storage_state'] == 'replicated' ||
+            (row['not_after'] as int) <=
+                DateTime.now().millisecondsSinceEpoch) {
+          continue;
+        }
+        if (submitted >= 4) break;
+        final retry = await db.relayHa.outgoingRetry(row);
+        if (retry?['blocked'] == true ||
+            ((retry?['next_attempt_at'] as int?) ?? 0) >
+                DateTime.now().millisecondsSinceEpoch) {
+          continue;
+        }
+        try {
+          await _withAndroidServerRegistrationRetry(
+            client: adapter,
+            request: () => adapter.submitEnvelope(
+              submitRequestJson: jsonEncode({
+                'recipient_key_id': row['recipient_key_id'],
+                'envelope_id': row['envelope_id'],
+                'envelope_b64': row['envelope_b64'],
+              }),
+            ),
+          );
+        } on RelayHaException catch (error) {
+          _logDiagnostic('warn', 'relay_outbox_retry', {
+            'envelope_id': row['envelope_id'],
+            'code': error.code,
+          });
+        }
+        submitted++;
+      }
+      await _withAndroidServerRegistrationRetry(
+        client: adapter,
+        request: () => adapter.ackMailbox(
+          recipientKeyId: identity.keyId,
+          ackRequestJson: jsonEncode({'envelope_ids': <String>[]}),
+        ),
+      );
+      for (final logicalId
+          in pending
+              .map((row) => row['logical_message_id'] as String)
+              .toSet()) {
+        final rows = await db.relayHa.outgoingForLogicalMessage(logicalId);
+        if (rows.isEmpty) continue;
+        final fanout = await db.getOutboundEnvelopeBatch(logicalId);
+        final transfer = await db.getFileTransferByMessageEnvelopeId(logicalId);
+        final expected = fanout.isNotEmpty
+            ? fanout.length
+            : transfer != null
+            ? ((transfer['chunk_count'] as num).toInt() + 1)
+            : 1;
+        final completeSet = rows.length == expected;
+        final allDelivered =
+            completeSet &&
+            rows.every((row) => row['delivery_state'] == 'delivered');
+        final allReplicated =
+            completeSet &&
+            rows.every((row) => row['storage_state'] == 'replicated');
+        final anyRejected = rows.any(
+          (row) => row['delivery_state'] == 'rejected',
+        );
+        final anyExpired = rows.any(
+          (row) => row['delivery_state'] == 'expired',
+        );
+        final allTerminal =
+            completeSet &&
+            rows.every(
+              (row) => const [
+                'delivered',
+                'rejected',
+                'expired',
+              ].contains(row['delivery_state']),
+            );
+        await db.updateMessageDelivery(
+          envelopeId: logicalId,
+          deliveryStatus: allDelivered
+              ? AndroidDeliveryStatus.sent
+              : allTerminal && anyRejected
+              ? AndroidDeliveryStatus.rejected
+              : allTerminal && anyExpired
+              ? AndroidDeliveryStatus.expired
+              : AndroidDeliveryStatus.serverMailbox,
+          deliveryDetail: allDelivered
+              ? '收件方已验证并持久接收。'
+              : anyRejected
+              ? '部分收件方已拒绝，未全部送达。'
+              : anyExpired
+              ? '服务端已可靠记录过期，未全部送达。'
+              : allReplicated
+              ? '已可靠保存，等待收件方接收。'
+              : '等待主备可靠保存；本机保留重试副本。',
+        );
+      }
+    } finally {
+      adapter.close();
     }
   }
 
@@ -783,6 +1001,66 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     return l10n.autoBackupEveryHours(hours);
   }
 
+  Future<dynamic> _handleExternalOpenCall(MethodCall call) async {
+    if (call.method != 'externalOpen') return null;
+    await _handleExternalOpenPayload(call.arguments);
+    return null;
+  }
+
+  Future<void> _consumeInitialExternalOpen() async {
+    try {
+      final payload = await _externalOpenChannel.invokeMethod<Object?>(
+        'consumeInitialOpen',
+      );
+      await _handleExternalOpenPayload(payload);
+    } on MissingPluginException {
+      // Non-Android development targets do not provide the external-open channel.
+    } on PlatformException catch (error) {
+      debugPrint('Envelope initial external-open request failed: $error');
+    }
+  }
+
+  Future<void> _handleExternalOpenPayload(Object? value) async {
+    if (!mounted || value is! Map) return;
+    final payload = value.cast<Object?, Object?>();
+    final kind = payload['kind']?.toString();
+    if (kind != 'open' && kind != 'file') return;
+
+    setState(() {
+      _androidHomeTab = _AndroidHomeTab.unseal;
+      _androidMessageSelectionMode = false;
+      _selectedAndroidMessageIds.clear();
+    });
+    if (kind == 'open') return;
+
+    try {
+      _pendingExternalEnvelopeFile = AndroidPickedFile.fromMap(payload);
+      if (!_secureIdentityReady) {
+        setState(() {
+          _status = '已接收离线信封';
+          _details = [
+            '文件：${_pendingExternalEnvelopeFile!.name}',
+            '请先在设置中恢复收件身份；恢复完成后将自动继续拆封。',
+          ].join('\n');
+        });
+      }
+      _schedulePendingExternalEnvelopeImport();
+    } on SecureStoreException catch (error) {
+      setState(() {
+        _status = '打开离线信封失败';
+        _details = error.message;
+      });
+    }
+  }
+
+  void _schedulePendingExternalEnvelopeImport() {
+    if (!mounted || _busy || !_secureIdentityReady) return;
+    final file = _pendingExternalEnvelopeFile;
+    if (file == null) return;
+    _pendingExternalEnvelopeFile = null;
+    unawaited(_importAndroidOfflineEnvelopeFile(file));
+  }
+
   Future<void> _run(String label, Future<void> Function() action) async {
     if (_busy) return;
     final startedAt = DateTime.now();
@@ -819,6 +1097,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     } finally {
       if (mounted) {
         setState(() => _busy = false);
+        _schedulePendingExternalEnvelopeImport();
       }
     }
   }
@@ -1088,6 +1367,11 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     _androidP2pPort = null;
     _androidServerRegistrationTicketByUri.clear();
     _androidLastMessageSyncAt = null;
+    final relay = _androidRelayClient;
+    _androidRelayClient = null;
+    if (relay != null) {
+      unawaited(relay.then((client) => client.close(), onError: (Object _) {}));
+    }
     _androidLastMessageSyncError = null;
     _androidLastLocalBackupAt = null;
     _androidLastLocalBackupError = null;
@@ -1103,8 +1387,6 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     _selectedAndroidGroupId = null;
     _androidMessageSelectionMode = false;
     _selectedAndroidMessageIds.clear();
-    _seenIncomingMessageCounts.clear();
-    _seenIncomingConversationCounts.clear();
     if (details != null) {
       _details = details;
     }
@@ -1206,6 +1488,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
           unawaited(_ensureAndroidP2pListening());
         }
       }
+      _schedulePendingExternalEnvelopeImport();
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -2076,7 +2359,9 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
               peerKeyId: selectedKeyId,
               excludeGroupConversations: true,
             );
-      final pendingCount = await db.getPendingMessageCount();
+      final pendingCount =
+          await db.getPendingMessageCount() +
+          await db.getPendingGroupControlCount();
       final nextCounter = await db.getNextMessageCounter();
       final incomingCounts = await db.getIncomingMessageCountsByPeer();
       final incomingConversationCounts = await db
@@ -2105,20 +2390,10 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         _androidMessageLimitsByGroup.removeWhere(
           (groupId, _) => !visibleGroupIds.contains(groupId),
         );
-        _seenIncomingMessageCounts.removeWhere(
-          (keyId, _) => store.findContact(keyId) == null,
-        );
-        _seenIncomingConversationCounts.removeWhere(
-          (groupId, _) => !visibleGroupIds.contains(groupId),
-        );
         for (final contact in store.contacts) {
           _androidMessageLimitsByContact.putIfAbsent(
             contact.keyId,
             () => _androidMessagesPageSize,
-          );
-          _seenIncomingMessageCounts.putIfAbsent(
-            contact.keyId,
-            () => incomingCounts[contact.keyId] ?? 0,
           );
         }
         for (final group in store.groups.where(
@@ -2127,10 +2402,6 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
           _androidMessageLimitsByGroup.putIfAbsent(
             group.groupId,
             () => _androidMessagesPageSize,
-          );
-          _seenIncomingConversationCounts.putIfAbsent(
-            group.groupId,
-            () => incomingConversationCounts[group.groupId] ?? 0,
           );
         }
         final visibleMessageIds = store.messages
@@ -2190,8 +2461,6 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         _selectedAndroidGroupId = null;
         _androidMessageSelectionMode = false;
         _selectedAndroidMessageIds.clear();
-        _seenIncomingMessageCounts.clear();
-        _seenIncomingConversationCounts.clear();
       });
     }
     if (refresh) {
@@ -2232,8 +2501,42 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     return _normalizeEnvelopeServerUrlInput(value);
   }
 
-  EnvelopeServerClient _createEnvelopeServerClient([String? serverUrl]) =>
-      EnvelopeServerClient(_serverUrl(serverUrl), nativeCore: _nativeCore);
+  Future<AndroidRelayHaClient> _getAndroidRelayClient() {
+    return _androidRelayClient ??= () async {
+      final bootstrap =
+          (jsonDecode(
+                    await rootBundle.loadString(
+                      'assets/relay/ha-bootstrap.json',
+                    ),
+                  )
+                  as Map)
+              .cast<String, Object?>();
+      final db = await _ensureAndroidDbStore();
+      return AndroidRelayHaClient(
+        adminPublic: bootstrap['admin_public'] as String,
+        clusterId: bootstrap['cluster_id'] as String,
+        bootstrapUrls: [
+          _serverUrl(),
+          ...(bootstrap['bootstrap_urls'] as List).cast<String>(),
+        ].map((url) => url.endsWith('/') ? url : '$url/').toList(),
+        native: _nativeCore.haV2,
+        store: db.relayHa,
+      );
+    }();
+  }
+
+  EnvelopeServerClient _createEnvelopeServerClient([String? serverUrl]) {
+    final identity = _requireAndroidIdentity();
+    return AndroidRelayHaAdapter(
+      _serverUrl(serverUrl),
+      client: _getAndroidRelayClient,
+      database: _ensureAndroidDbStore,
+      identityJson: identity.identityJson,
+      contactJson: _nativeCore.contactFromIdentityJson(identity.identityJson),
+      actorId: identity.keyId,
+      native: _nativeCore,
+    );
+  }
 
   String _androidServerRouteKeyForUrl(String serverUrl) {
     final value = serverUrl.trim();
@@ -2365,8 +2668,13 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     try {
       return await request();
     } catch (error) {
-      if (error is! EnvelopeServerHttpException ||
-          !error.isMissingRegisteredDeviceRoute) {
+      final missingRegistration =
+          error is EnvelopeServerHttpException &&
+              error.isMissingRegisteredDeviceRoute ||
+          error is RelayHaException &&
+              (error.reasonCode == 'NOT_REGISTERED' ||
+                  error.code == 'NOT_REGISTERED');
+      if (!missingRegistration) {
         rethrow;
       }
       await _ensureAndroidServerEndpointRegisteredForClient(
@@ -2539,29 +2847,37 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
   }
 
   int _newIncomingMessageCountFor(AndroidContactRecord contact) {
-    final incomingCount = _incomingMessageCountFor(contact.keyId);
-    final seenCount =
-        _seenIncomingMessageCounts[contact.keyId] ?? incomingCount;
-    final unreadCount = incomingCount - seenCount;
-    return unreadCount <= 0 ? 0 : unreadCount;
+    return _incomingMessageCountFor(contact.keyId);
   }
 
   int _newIncomingGroupMessageCountFor(AndroidGroupRecord group) {
-    final incomingCount = _incomingConversationCountFor(group.groupId);
-    final seenCount =
-        _seenIncomingConversationCounts[group.groupId] ?? incomingCount;
-    final unreadCount = incomingCount - seenCount;
-    return unreadCount <= 0 ? 0 : unreadCount;
+    return _incomingConversationCountFor(group.groupId);
   }
 
   void _markAndroidContactMessagesSeen(String keyId) {
-    _seenIncomingMessageCounts[keyId] = _incomingMessageCountFor(keyId);
+    _androidIncomingMessageCounts = {
+      ..._androidIncomingMessageCounts,
+      keyId: 0,
+    };
+    if (AndroidDbStore.instance.isOpen) {
+      unawaited(
+        AndroidDbStore.instance.markIncomingMessagesRead(peerKeyId: keyId),
+      );
+    }
   }
 
   void _markAndroidGroupMessagesSeen(String groupId) {
-    _seenIncomingConversationCounts[groupId] = _incomingConversationCountFor(
-      groupId,
-    );
+    _androidIncomingConversationCounts = {
+      ..._androidIncomingConversationCounts,
+      groupId: 0,
+    };
+    if (AndroidDbStore.instance.isOpen) {
+      unawaited(
+        AndroidDbStore.instance.markIncomingMessagesRead(
+          conversationId: groupId,
+        ),
+      );
+    }
   }
 
   String _androidAvatarSeedFor(AndroidContactRecord contact) {
@@ -2937,14 +3253,93 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         });
       }
       return AndroidP2pAck.ok(
-        message.envelopeId,
+        result.receiptEnvelopeId ?? message.envelopeId,
         result.duplicate
             ? 'duplicate ignored'
             : 'imported from ${message.peerDisplayName}',
+        recipientResult: await _signedAndroidRecipientResult(
+          message,
+          envelopeId: result.receiptEnvelopeId,
+        ),
+        recipientResults: await _signedAndroidRelatedFileResults(
+          message,
+          result.receiptEnvelopeId ?? message.envelopeId,
+        ),
       );
     } catch (error) {
       return AndroidP2pAck.error('', error.toString());
     }
+  }
+
+  Future<Map<String, Object?>?> _signedAndroidRecipientResult(
+    AndroidMessageRecord message, {
+    String? envelopeId,
+  }) async {
+    final identity = _requireAndroidIdentity();
+    final db = await _ensureAndroidDbStore();
+    final pending = await db.relayHa.incomingResult(
+      senderKeyId: message.peerKeyId,
+      recipientKeyId: identity.keyId,
+      envelopeId: envelopeId ?? message.envelopeId,
+    );
+    if (pending == null) return null;
+    final persisted = pending['signed_result_json'];
+    if (persisted is String) {
+      return (jsonDecode(persisted) as Map).cast<String, Object?>();
+    }
+    final descriptor = (jsonDecode(pending['descriptor_json'] as String) as Map)
+        .cast<String, Object?>();
+    final signed = _nativeCore.haV2({
+      'op': 'sign_result',
+      'identity_json': identity.identityJson,
+      'result': {...descriptor, 'signature': ''},
+    });
+    await db.relayHa.attachSignedResult(
+      jsonEncode(signed),
+      verify: (json) async {
+        return _nativeCore.haV2({
+          'op': 'verify_result',
+          'result': jsonDecode(json),
+          'contact': jsonDecode(
+            _nativeCore.contactFromIdentityJson(identity.identityJson),
+          ),
+          'binding': {
+            'operation_id': 'recipient-result',
+            for (final key in [
+              'sender_key_id',
+              'recipient_key_id',
+              'envelope_id',
+              'envelope_sha256',
+            ])
+              key: descriptor[key],
+            'not_after': '18446744073709551615',
+          },
+        });
+      },
+    );
+    return signed;
+  }
+
+  Future<List<Map<String, Object?>>> _signedAndroidRelatedFileResults(
+    AndroidMessageRecord message,
+    String envelopeId,
+  ) async {
+    final db = await _ensureAndroidDbStore();
+    final identity = _requireAndroidIdentity();
+    final rows = await db.relayHa.relatedFileResults(
+      envelopeId,
+      message.peerKeyId,
+      identity.keyId,
+    );
+    final results = <Map<String, Object?>>[];
+    for (final row in rows) {
+      final signed = await _signedAndroidRecipientResult(
+        message,
+        envelopeId: row['envelope_id'] as String,
+      );
+      if (signed != null) results.add(signed);
+    }
+    return results;
   }
 
   String _encodeAndroidIntroQrPayload({
@@ -3483,7 +3878,9 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
   ) {
     final signature = payload['signature']?.toString() ?? '';
     if (signature.isEmpty) {
-      throw const SecureStoreException('群组事件缺少 event signature。');
+      throw const AndroidInvalidEnvelopePayloadException(
+        '群组事件缺少 event signature。',
+      );
     }
     try {
       final verified = _nativeCore.verifyContactSignature(
@@ -3493,12 +3890,12 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         signature: signature,
       );
       if (!verified.valid || verified.keyId != senderContact.keyId) {
-        throw const SecureStoreException('群组事件签名校验失败。');
+        throw const AndroidInvalidEnvelopePayloadException('群组事件签名校验失败。');
       }
-    } on SecureStoreException {
+    } on AndroidInvalidEnvelopePayloadException {
       rethrow;
-    } catch (error) {
-      throw SecureStoreException('群组事件签名校验失败：$error');
+    } on EnvelopeNativeException catch (error) {
+      throw AndroidInvalidEnvelopePayloadException('群组事件签名校验失败：$error');
     }
   }
 
@@ -3610,9 +4007,22 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
 
   Future<AndroidP2pAck> _sendAndroidP2pEnvelopeWithCooldown({
     required String recipientKeyId,
+    required String envelopeId,
     required String ticket,
     required Uint8List envelopeBytes,
+    bool allowDeferred = false,
   }) async {
+    final identity = _requireAndroidIdentity();
+    final db = await _ensureAndroidDbStore();
+    final relay = await _getAndroidRelayClient();
+    final intent = await AndroidRelayHaAdapter.stageIntent(
+      db: db,
+      clusterId: relay.clusterId,
+      senderKeyId: identity.keyId,
+      recipientKeyId: recipientKeyId,
+      envelopeId: envelopeId,
+      envelopeBase64: _encodeOpaqueEnvelopeBase64(envelopeBytes),
+    );
     if (!_androidP2pCooldown.canAttempt(
       recipientKeyId: recipientKeyId,
       ticket: ticket,
@@ -3637,6 +4047,43 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         envelopeBytes: envelopeBytes,
         timeout: androidP2pFastAttemptTimeout,
       );
+      final result = ack.recipientResult;
+      final contact =
+          await db.relayHa.recipientContact(recipientKeyId) ??
+          (await db.getKnownContact(recipientKeyId))?.contactJson;
+      if (result == null || contact == null) {
+        throw const AndroidP2pException('直连已传输，尚未取得可验证的接收结果。');
+      }
+      await db.relayHa.applyRecipientResult(
+        jsonEncode(result),
+        verify: (json) async => _nativeCore.haV2({
+          'op': 'verify_result',
+          'result': jsonDecode(json),
+          'contact': jsonDecode(contact),
+          'binding': AndroidRelayHaAdapter.binding(intent),
+        }),
+      );
+      for (final related in ack.recipientResults) {
+        final relatedIntent = await db.relayHa.outgoing(
+          senderKeyId: identity.keyId,
+          recipientKeyId: recipientKeyId,
+          envelopeId: related['envelope_id'] as String,
+        );
+        if (relatedIntent == null) continue;
+        await db.relayHa.applyRecipientResult(
+          jsonEncode(related),
+          verify: (json) async => _nativeCore.haV2({
+            'op': 'verify_result',
+            'result': jsonDecode(json),
+            'contact': jsonDecode(contact),
+            'binding': AndroidRelayHaAdapter.binding(relatedIntent),
+          }),
+        );
+      }
+      if (result['outcome'] != 'delivered' &&
+          !(allowDeferred && result['outcome'] == 'deferred')) {
+        throw AndroidP2pException('接收方尚未完成处理：${result['outcome']}');
+      }
       _androidP2pCooldown.recordSuccess(
         recipientKeyId: recipientKeyId,
         ticket: ticket,
@@ -3701,6 +4148,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         try {
           final ack = await _sendAndroidP2pEnvelopeWithCooldown(
             recipientKeyId: activeContact.keyId,
+            envelopeId: envelopeId,
             ticket: ticket,
             envelopeBytes: _decodeOpaqueEnvelopeBase64(envelopeBase64),
           );
@@ -3733,6 +4181,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
             if (!endpoint.isExpired) {
               final ack = await _sendAndroidP2pEnvelopeWithCooldown(
                 recipientKeyId: recipient.keyId,
+                envelopeId: envelopeId,
                 ticket: endpoint.p2pTicket,
                 envelopeBytes: _decodeOpaqueEnvelopeBase64(envelopeBase64),
               );
@@ -3763,6 +4212,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     if (envelopes.isEmpty) {
       return 'empty';
     }
+    await _stageAndroidEnvelopeBatch(contact.keyId, envelopes);
     final activeContact =
         _androidChatStore.findContact(contact.keyId) ?? contact;
     final ticket = activeContact.p2pTicket?.trim() ?? '';
@@ -3882,59 +4332,21 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       members: members,
       now: now,
     );
-    final db = await _ensureAndroidDbStore();
-    await db.createGroupWithMembers(
+    final delivery = await _broadcastAndroidGroupControl(
       group: group,
       members: members,
-      event: _groupEventFromPayload(group, payload),
+      payload: payload,
+      recipients: members.where((member) => member.keyId != identity.keyId),
+      onStaged: () async {
+        await _refreshAndroidChatStore();
+        if (!mounted) return;
+        setState(() {
+          _selectedAndroidContactKeyId = null;
+          _selectedAndroidGroupId = group.groupId;
+          _details = '群组已创建：${group.displayName}\n正在发送群邀请...';
+        });
+      },
     );
-    if (mounted) {
-      setState(() {
-        final memberKeys = {
-          for (final member in members) '${member.groupId}:${member.keyId}',
-        };
-        _androidChatStore = _androidChatStore.copyWith(
-          groups: [
-            for (final existing in _androidChatStore.groups)
-              if (existing.groupId != group.groupId) existing,
-            group,
-          ],
-          groupMembers: [
-            for (final existing in _androidChatStore.groupMembers)
-              if (!memberKeys.contains('${existing.groupId}:${existing.keyId}'))
-                existing,
-            ...members,
-          ],
-        );
-        _selectedAndroidContactKeyId = null;
-        _selectedAndroidGroupId = group.groupId;
-        _details = '群组已创建：${group.displayName}\n正在发送群邀请...';
-      });
-    }
-    await _refreshAndroidChatStore();
-
-    final delivery = <String>[];
-    var counter = await db.getNextMessageCounter();
-    await _ensureAndroidP2pListening();
-    for (final invitee in uniqueInvitees) {
-      try {
-        final envelope = _encryptAndroidGroupControlEnvelope(
-          recipient: invitee,
-          payload: payload,
-          messageCounter: counter,
-        );
-        counter = androidAdvanceMessageCounter(envelope.messageCounter);
-        final status = await _deliverAndroidOpaqueEnvelopeToContact(
-          contact: invitee,
-          envelopeId: envelope.envelopeId,
-          envelopeBase64: envelope.envelopeBase64,
-        );
-        delivery.add('${invitee.displayLabel}: $status');
-      } catch (error) {
-        delivery.add('${invitee.displayLabel}: $error');
-      }
-    }
-    await db.setNextMessageCounter(counter);
     await _refreshAndroidChatStore();
     if (!mounted) return group;
     setState(() {
@@ -3977,71 +4389,93 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       now: now,
       extra: {'text': normalizedText},
     );
-    final delivery = <String>[];
-    var counter = await db.getNextMessageCounter();
-    await _ensureAndroidP2pListening();
-    String? firstEnvelopeId;
-    final jobs = <Future<_AndroidMemberDeliveryResult> Function()>[];
-    for (final member in recipients) {
+    final baseCounter = await db.getNextMessageCounter();
+    final nextCounter = androidAdvanceMessageCounter(
+      baseCounter,
+      recipients.length,
+    );
+    await db.setNextMessageCounter(nextCounter);
+    var counter = baseCounter;
+    final drafts = <_AndroidStagedEnvelopeDraft>[];
+    for (var index = 0; index < recipients.length; index += 1) {
+      final member = recipients[index];
       final contact = member.toContactRecord();
       final envelope = _encryptAndroidGroupControlEnvelope(
         recipient: contact,
         payload: payload,
         messageCounter: counter,
       );
-      firstEnvelopeId ??= envelope.envelopeId;
       counter = androidAdvanceMessageCounter(envelope.messageCounter);
-      jobs.add(() async {
-        try {
-          final status = await _deliverAndroidOpaqueEnvelopeToContact(
-            contact: contact,
-            envelopeId: envelope.envelopeId,
-            envelopeBase64: envelope.envelopeBase64,
-          );
-          return _AndroidMemberDeliveryResult(
-            detail: '${member.displayLabel}: $status',
-            envelopeId: envelope.envelopeId,
-          );
-        } catch (error) {
-          return _AndroidMemberDeliveryResult(
-            detail: '${member.displayLabel}: $error',
-            failed: true,
-            envelopeId: envelope.envelopeId,
-          );
-        }
-      });
+      drafts.add(
+        _AndroidStagedEnvelopeDraft(
+          contact: contact,
+          recipientDisplayName: member.displayLabel,
+          envelopeId: envelope.envelopeId,
+          envelopeBase64: envelope.envelopeBase64,
+          childIndex: index,
+        ),
+      );
     }
-    final deliveryResults = await _runAndroidLimitedConcurrency(
-      jobs,
-      concurrency: _androidGroupDeliveryConcurrency,
+    final stagedBytes = drafts.fold<int>(
+      0,
+      (total, draft) => total + draft.envelopeBase64.length,
     );
-    delivery.addAll(deliveryResults.map((result) => result.detail));
-    final failedDeliveries = deliveryResults.any((result) => result.failed);
+    if (stagedBytes > _androidMaximumStagedOutboundEnvelopeBytes) {
+      throw const SecureStoreException('群文本 fanout outbox 超过 256 MiB 安全上限。');
+    }
+    final logicalMessageId = drafts.first.envelopeId;
+    final children = drafts
+        .map(
+          (draft) => AndroidPendingEnvelopeRecord(
+            envelopeId: draft.envelopeId,
+            logicalMessageId: logicalMessageId,
+            recipientKeyId: draft.contact.keyId,
+            recipientDisplayName: draft.recipientDisplayName,
+            recipientContactJson: draft.contact.contactJson,
+            envelopeBase64: draft.envelopeBase64,
+            createdAtUnixMs: now,
+            childIndex: draft.childIndex,
+            childCount: drafts.length,
+          ),
+        )
+        .toList(growable: false);
     final message = AndroidMessageRecord(
-      envelopeId: firstEnvelopeId ?? _newAndroidGroupEventId(),
+      envelopeId: logicalMessageId,
       conversationId: group.groupId,
       direction: 'outgoing',
       peerKeyId: group.groupId,
       peerDisplayName: group.displayName,
       createdAtUnixMs: now,
-      messageCounter: counter,
+      messageCounter: baseCounter,
       text: normalizedText,
       opaqueEnvelopeBase64: '',
-      deliveryStatus: failedDeliveries
-          ? AndroidDeliveryStatus.pending
-          : delivery.any(
-              (item) => item.contains(AndroidDeliveryStatus.serverMailbox),
-            )
-          ? AndroidDeliveryStatus.serverMailbox
-          : AndroidDeliveryStatus.sent,
-      deliveryDetail: delivery.join('\n'),
-      deliveryUpdatedAtUnixMs: DateTime.now().millisecondsSinceEpoch,
+      deliveryStatus: AndroidDeliveryStatus.pending,
+      deliveryDetail: '群发密文已持久化，等待逐成员投递。',
+      deliveryUpdatedAtUnixMs: now,
     );
-    await db.addMessage(message);
-    await db.addGroupEvent(_groupEventFromPayload(group, payload));
-    await db.setNextMessageCounter(counter);
+    await db.stageOutboundEnvelopeBatch(
+      logicalMessage: message,
+      children: children,
+      groupEvent: _groupEventFromPayload(group, payload),
+    );
+    await _ensureAndroidP2pListening();
+    final jobs = children
+        .map<Future<_AndroidMemberDeliveryResult> Function()>(
+          (child) =>
+              () => _deliverAndroidPendingEnvelope(child),
+        )
+        .toList(growable: false);
+    final deliveryResults = await _runAndroidLimitedConcurrency(
+      jobs,
+      concurrency: _androidGroupDeliveryConcurrency,
+    );
+    final updated =
+        await _refreshAndroidLogicalDelivery(logicalMessageId) ??
+        (throw SecureStoreException('群发逻辑消息更新失败：$logicalMessageId'));
     await _refreshAndroidChatStore();
-    return message;
+    return updated.copyWith(
+      deliveryDetail: deliveryResults.map((result) => result.detail).join('\n'),
+    );
   }
 
   List<AndroidGroupMemberRecord> _androidGroupMessageRecipients({
@@ -4059,7 +4493,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     if (self == null || !self.isActive) {
       throw const SecureStoreException('你尚未加入该群，不能发送群消息。');
     }
-    return members
+    final recipients = members
         .where((member) {
           if (!member.isActive || member.keyId == selfKeyId) return false;
           if (group.policy == AndroidGroupPolicy.verified &&
@@ -4069,6 +4503,186 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
           return member.contactJson.trim().isNotEmpty;
         })
         .toList(growable: false);
+    if (recipients.length > _androidMaximumOfflineGroupRecipients) {
+      throw SecureStoreException(
+        '群组可投递收件人超过 '
+        '$_androidMaximumOfflineGroupRecipients 人资源上限。',
+      );
+    }
+    return recipients;
+  }
+
+  Future<_AndroidMemberDeliveryResult> _deliverAndroidPendingEnvelope(
+    AndroidPendingEnvelopeRecord child, {
+    String? serverUrl,
+  }) async {
+    final db = await _ensureAndroidDbStore();
+    try {
+      final status = await _deliverAndroidOpaqueEnvelopeToContact(
+        contact: child.toContactRecord(),
+        envelopeId: child.envelopeId,
+        envelopeBase64: child.envelopeBase64,
+        serverUrl: serverUrl,
+      );
+      final deliveryStatus =
+          status.contains(AndroidDeliveryStatus.serverMailbox)
+          ? AndroidDeliveryStatus.serverMailbox
+          : AndroidDeliveryStatus.sent;
+      final route = status.split(':').first;
+      await db.updatePendingEnvelopeDelivery(
+        envelopeId: child.envelopeId,
+        deliveryStatus: deliveryStatus,
+        detail: status,
+        route: route,
+      );
+      return _AndroidMemberDeliveryResult(
+        detail: '${child.recipientDisplayName}: $status',
+        envelopeId: child.envelopeId,
+      );
+    } catch (error) {
+      final detail = error.toString();
+      await db.updatePendingEnvelopeDelivery(
+        envelopeId: child.envelopeId,
+        deliveryStatus: AndroidDeliveryStatus.pending,
+        detail: detail,
+        route: 'pending',
+      );
+      return _AndroidMemberDeliveryResult(
+        detail: '${child.recipientDisplayName}: $detail',
+        failed: true,
+        envelopeId: child.envelopeId,
+      );
+    }
+  }
+
+  Future<_AndroidMemberDeliveryResult> _deliverAndroidPendingEnvelopeBatch(
+    AndroidContactRecord contact,
+    String recipientDisplayName,
+    List<AndroidPendingEnvelopeRecord> children, {
+    String? serverUrl,
+  }) async {
+    final db = await _ensureAndroidDbStore();
+    final envelopes = children
+        .map(
+          (child) => _AndroidEnvelopeToSend(
+            envelopeId: child.envelopeId,
+            envelopeBase64: child.envelopeBase64,
+            ordinal: child.childIndex,
+          ),
+        )
+        .toList(growable: false);
+    try {
+      final status = await _deliverAndroidOpaqueEnvelopeBatchToContact(
+        contact: contact,
+        envelopes: envelopes,
+        serverUrl: serverUrl,
+      );
+      final deliveryStatus =
+          status.contains(AndroidDeliveryStatus.serverMailbox)
+          ? AndroidDeliveryStatus.serverMailbox
+          : AndroidDeliveryStatus.sent;
+      final route = status.split(':').first;
+      for (final child in children) {
+        await db.updatePendingEnvelopeDelivery(
+          envelopeId: child.envelopeId,
+          deliveryStatus: deliveryStatus,
+          detail: status,
+          route: route,
+        );
+      }
+      return _AndroidMemberDeliveryResult(
+        detail: '$recipientDisplayName: $status (${children.length} envelopes)',
+        envelopeId: children.first.envelopeId,
+      );
+    } catch (error) {
+      final detail = error.toString();
+      for (final child in children) {
+        await db.updatePendingEnvelopeDelivery(
+          envelopeId: child.envelopeId,
+          deliveryStatus: AndroidDeliveryStatus.pending,
+          detail: detail,
+          route: 'pending',
+        );
+      }
+      return _AndroidMemberDeliveryResult(
+        detail: '$recipientDisplayName: $detail',
+        failed: true,
+        envelopeId: children.first.envelopeId,
+      );
+    }
+  }
+
+  Future<AndroidMessageRecord?> _refreshAndroidLogicalDelivery(
+    String logicalMessageId,
+  ) async {
+    final db = await _ensureAndroidDbStore();
+    final children = await db.getOutboundEnvelopeBatch(logicalMessageId);
+    if (children.isEmpty) {
+      return db.getMessage(logicalMessageId);
+    }
+    final expected = children
+        .map((child) => child.childCount)
+        .fold<int>(0, max);
+    final complete =
+        expected == children.length &&
+        children.map((child) => child.childIndex).toSet().length == expected;
+    final hasPending =
+        !complete ||
+        children.any(
+          (child) => child.deliveryStatus == AndroidDeliveryStatus.pending,
+        );
+    final status = hasPending
+        ? AndroidDeliveryStatus.pending
+        : children.any(
+            (child) =>
+                child.deliveryStatus == AndroidDeliveryStatus.serverMailbox,
+          )
+        ? AndroidDeliveryStatus.serverMailbox
+        : AndroidDeliveryStatus.sent;
+    final detail = children
+        .map(
+          (child) =>
+              '${child.recipientDisplayName}: '
+              '${child.deliveryStatus}'
+              '${child.lastRoute == null ? '' : ' / ${child.lastRoute}'}'
+              '${child.lastError == null ? '' : ' / ${child.lastError}'}',
+        )
+        .join('\n');
+    final logicalKind = children.first.logicalKind;
+    if (logicalKind == AndroidPendingEnvelopeKind.groupControl) {
+      if (!hasPending) {
+        await db.deleteOutboundEnvelopeBatch(logicalMessageId);
+      }
+      return null;
+    }
+    await db.updateMessageDelivery(
+      envelopeId: logicalMessageId,
+      deliveryStatus: status,
+      deliveryDetail: detail,
+    );
+    final updated = await db.getMessage(logicalMessageId);
+    if (!hasPending) {
+      await db.deleteOutboundEnvelopeBatch(logicalMessageId);
+    }
+    return updated;
+  }
+
+  void _validateAndroidGroupFileOutboxBudget({
+    required int recipientCount,
+    required int totalFileBytes,
+    required int chunkCount,
+  }) {
+    if (recipientCount <= 0 || totalFileBytes < 0 || chunkCount <= 0) {
+      throw const SecureStoreException('群文件 outbox 预算参数无效。');
+    }
+    final estimate =
+        recipientCount * (totalFileBytes * 2 + (chunkCount + 1) * 128 * 1024);
+    if (estimate > _androidMaximumStagedOutboundEnvelopeBytes) {
+      throw SecureStoreException(
+        '群文件 fanout 预计需要 ${estimate ~/ (1024 * 1024)} MiB outbox，'
+        '超过 256 MiB 安全上限。',
+      );
+    }
   }
 
   Future<AndroidMessageRecord> _sendAndroidGroupFile({
@@ -4099,11 +4713,152 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     final transferId = _randomAndroidTransferId();
     final chunkCount = scan.chunkHashes.length;
     final now = DateTime.now().millisecondsSinceEpoch;
-    var counter = await db.getNextMessageCounter();
-    final delivery = <String>[];
-    await _ensureAndroidP2pListening();
-    final baseCounter = counter;
     final envelopesPerMember = chunkCount + 1;
+    _validateAndroidGroupFileOutboxBudget(
+      recipientCount: recipients.length,
+      totalFileBytes: scan.totalSize,
+      chunkCount: chunkCount,
+    );
+    final baseCounter = await db.getNextMessageCounter();
+    final nextCounter = androidAdvanceMessageCounter(
+      baseCounter,
+      recipients.length * envelopesPerMember,
+    );
+    // Reserve every child counter before encryption or any network side effect.
+    await db.setNextMessageCounter(nextCounter);
+
+    final manifestPayload = <String, Object?>{
+      'version': 1,
+      'kind': 'file_manifest',
+      'transfer_id': transferId,
+      'conversation_id': group.groupId,
+      'group_id': group.groupId,
+      'group_epoch': group.epoch,
+      'filename': fileName,
+      'mime': mime,
+      'total_size': scan.totalSize,
+      'chunk_size': _androidOnlineFileChunkBytes,
+      'chunk_count': chunkCount,
+      'file_sha256': scan.fileSha256,
+      'chunk_sha256': scan.chunkHashes,
+    };
+    final drafts = <_AndroidStagedEnvelopeDraft>[];
+    for (
+      var memberIndex = 0;
+      memberIndex < recipients.length;
+      memberIndex += 1
+    ) {
+      final member = recipients[memberIndex];
+      final contact = member.toContactRecord();
+      var memberCounter = androidAdvanceMessageCounter(
+        baseCounter,
+        memberIndex * envelopesPerMember,
+      );
+      for (var index = 0; index < chunkCount; index += 1) {
+        final chunkBytes = await _readAndroidPickedFileChunkForSend(
+          file: file,
+          chunkIndex: index,
+          totalSize: scan.totalSize,
+        );
+        final chunkSha256 = _sha256Base64Url(chunkBytes);
+        if (chunkSha256 != scan.chunkHashes[index]) {
+          throw SecureStoreException('文件分片哈希校验失败：$index。');
+        }
+        final chunkPayload = <String, Object?>{
+          'version': 1,
+          'kind': 'file_chunk',
+          'transfer_id': transferId,
+          'conversation_id': group.groupId,
+          'group_id': group.groupId,
+          'chunk_index': index,
+          'chunk_count': chunkCount,
+          'chunk_sha256': chunkSha256,
+          'data_b64': _encodeOpaqueEnvelopeBase64(chunkBytes),
+        };
+        final outboundChunk = _nativeCore.encryptOpaqueFile(
+          identityJson: identity.identityJson,
+          recipientContactJson: contact.contactJson,
+          filename: '$fileName.part${index.toString().padLeft(4, '0')}',
+          mime: _androidFileChunkMime,
+          payloadBytes: Uint8List.fromList(
+            utf8.encode(jsonEncode(chunkPayload)),
+          ),
+          messageCounter: memberCounter,
+        );
+        drafts.add(
+          _AndroidStagedEnvelopeDraft(
+            contact: contact,
+            recipientDisplayName: member.displayLabel,
+            envelopeId: outboundChunk.envelopeId,
+            envelopeBase64: outboundChunk.envelopeBase64,
+            childIndex: memberIndex * envelopesPerMember + index,
+          ),
+        );
+        memberCounter = androidAdvanceMessageCounter(
+          outboundChunk.messageCounter,
+        );
+      }
+
+      final outboundManifest = _nativeCore.encryptOpaqueFile(
+        identityJson: identity.identityJson,
+        recipientContactJson: contact.contactJson,
+        filename: '$fileName.manifest.json',
+        mime: _androidFileManifestMime,
+        payloadBytes: Uint8List.fromList(
+          utf8.encode(jsonEncode(manifestPayload)),
+        ),
+        messageCounter: memberCounter,
+      );
+      drafts.add(
+        _AndroidStagedEnvelopeDraft(
+          contact: contact,
+          recipientDisplayName: member.displayLabel,
+          envelopeId: outboundManifest.envelopeId,
+          envelopeBase64: outboundManifest.envelopeBase64,
+          childIndex: memberIndex * envelopesPerMember + chunkCount,
+        ),
+      );
+    }
+
+    final children = drafts
+        .map(
+          (draft) => AndroidPendingEnvelopeRecord(
+            envelopeId: draft.envelopeId,
+            logicalMessageId: transferId,
+            recipientKeyId: draft.contact.keyId,
+            recipientDisplayName: draft.recipientDisplayName,
+            recipientContactJson: draft.contact.contactJson,
+            envelopeBase64: draft.envelopeBase64,
+            createdAtUnixMs: now,
+            childIndex: draft.childIndex,
+            childCount: drafts.length,
+          ),
+        )
+        .toList(growable: false);
+    final message = AndroidMessageRecord(
+      envelopeId: transferId,
+      conversationId: group.groupId,
+      direction: 'outgoing',
+      peerKeyId: group.groupId,
+      peerDisplayName: group.displayName,
+      createdAtUnixMs: now,
+      messageCounter: baseCounter,
+      text: _androidFileMessageText(fileName, scan.totalSize),
+      opaqueEnvelopeBase64: '',
+      deliveryStatus: AndroidDeliveryStatus.pending,
+      deliveryDetail: '群文件密文已持久化，等待逐成员投递。',
+      deliveryUpdatedAtUnixMs: now,
+      attachmentUri: file.uri,
+      attachmentPath: file.uri.startsWith('file://')
+          ? Uri.parse(file.uri).toFilePath()
+          : null,
+      attachmentMime: mime,
+    );
+    await db.stageOutboundEnvelopeBatch(
+      logicalMessage: message,
+      children: children,
+    );
+    await _ensureAndroidP2pListening();
     final jobs = <Future<_AndroidMemberDeliveryResult> Function()>[];
     for (
       var memberIndex = 0;
@@ -4111,181 +4866,71 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       memberIndex += 1
     ) {
       final member = recipients[memberIndex];
-      final memberCounterStart = androidAdvanceMessageCounter(
-        baseCounter,
-        memberIndex * envelopesPerMember,
+      final firstIndex = memberIndex * envelopesPerMember;
+      final memberChildren = children.sublist(
+        firstIndex,
+        firstIndex + envelopesPerMember,
       );
-      jobs.add(() async {
-        final contact = member.toContactRecord();
-        var memberCounter = memberCounterStart;
-        String? memberFirstEnvelopeId;
-        final memberEnvelopes = <_AndroidEnvelopeToSend>[];
-        try {
-          final manifestPayload = <String, Object?>{
-            'version': 1,
-            'kind': 'file_manifest',
-            'transfer_id': transferId,
-            'conversation_id': group.groupId,
-            'group_id': group.groupId,
-            'group_epoch': group.epoch,
-            'filename': fileName,
-            'mime': mime,
-            'total_size': scan.totalSize,
-            'chunk_size': _androidOnlineFileChunkBytes,
-            'chunk_count': chunkCount,
-            'file_sha256': scan.fileSha256,
-            'chunk_sha256': scan.chunkHashes,
-          };
-
-          for (var index = 0; index < chunkCount; index += 1) {
-            final chunkBytes = await _readAndroidPickedFileChunkForSend(
-              file: file,
-              chunkIndex: index,
-              totalSize: scan.totalSize,
-            );
-            final chunkSha256 = _sha256Base64Url(chunkBytes);
-            if (chunkSha256 != scan.chunkHashes[index]) {
-              throw SecureStoreException('文件分片哈希校验失败：$index。');
-            }
-            final chunkPayload = <String, Object?>{
-              'version': 1,
-              'kind': 'file_chunk',
-              'transfer_id': transferId,
-              'conversation_id': group.groupId,
-              'group_id': group.groupId,
-              'chunk_index': index,
-              'chunk_count': chunkCount,
-              'chunk_sha256': chunkSha256,
-              'data_b64': _encodeOpaqueEnvelopeBase64(chunkBytes),
-            };
-            final outboundChunk = _nativeCore.encryptOpaqueFile(
-              identityJson: identity.identityJson,
-              recipientContactJson: contact.contactJson,
-              filename: '$fileName.part${index.toString().padLeft(4, '0')}',
-              mime: _androidFileChunkMime,
-              payloadBytes: Uint8List.fromList(
-                utf8.encode(jsonEncode(chunkPayload)),
-              ),
-              messageCounter: memberCounter,
-            );
-            memberFirstEnvelopeId ??= outboundChunk.envelopeId;
-            memberCounter = androidAdvanceMessageCounter(
-              outboundChunk.messageCounter,
-            );
-            memberEnvelopes.add(
-              _AndroidEnvelopeToSend(
-                envelopeId: outboundChunk.envelopeId,
-                envelopeBase64: outboundChunk.envelopeBase64,
-                ordinal: index,
-              ),
-            );
-          }
-
-          final outboundManifest = _nativeCore.encryptOpaqueFile(
-            identityJson: identity.identityJson,
-            recipientContactJson: contact.contactJson,
-            filename: '$fileName.manifest.json',
-            mime: _androidFileManifestMime,
-            payloadBytes: Uint8List.fromList(
-              utf8.encode(jsonEncode(manifestPayload)),
-            ),
-            messageCounter: memberCounter,
-          );
-          memberFirstEnvelopeId ??= outboundManifest.envelopeId;
-          memberEnvelopes.add(
-            _AndroidEnvelopeToSend(
-              envelopeId: outboundManifest.envelopeId,
-              envelopeBase64: outboundManifest.envelopeBase64,
-              ordinal: chunkCount,
-            ),
-          );
-          final status = await _deliverAndroidOpaqueEnvelopeBatchToContact(
-            contact: contact,
-            envelopes: memberEnvelopes,
-            serverUrl: serverUrl,
-          );
-          return _AndroidMemberDeliveryResult(
-            detail:
-                '${member.displayLabel}: $status (${memberEnvelopes.length} envelopes)',
-            envelopeId: memberFirstEnvelopeId,
-          );
-        } catch (error) {
-          return _AndroidMemberDeliveryResult(
-            detail: '${member.displayLabel}: $error',
-            failed: true,
-            envelopeId: memberFirstEnvelopeId,
-          );
-        }
-      });
+      jobs.add(
+        () => _deliverAndroidPendingEnvelopeBatch(
+          member.toContactRecord(),
+          member.displayLabel,
+          memberChildren,
+          serverUrl: serverUrl,
+        ),
+      );
     }
-    counter = androidAdvanceMessageCounter(
-      baseCounter,
-      recipients.length * envelopesPerMember,
-    );
     final deliveryResults = await _runAndroidLimitedConcurrency(
       jobs,
       concurrency: _androidGroupFileDeliveryConcurrency,
     );
-    delivery.addAll(deliveryResults.map((result) => result.detail));
-    final failedDeliveries = deliveryResults
-        .where((result) => result.failed)
-        .length;
-    String? firstEnvelopeId;
-    for (final result in deliveryResults) {
-      final envelopeId = result.envelopeId;
-      if (envelopeId != null) {
-        firstEnvelopeId = envelopeId;
-        break;
-      }
-    }
-
-    final hasServerMailbox = delivery.any(
-      (item) => item.contains(AndroidDeliveryStatus.serverMailbox),
-    );
-    final message = AndroidMessageRecord(
-      envelopeId: firstEnvelopeId ?? _newAndroidGroupEventId(),
-      conversationId: group.groupId,
-      direction: 'outgoing',
-      peerKeyId: group.groupId,
-      peerDisplayName: group.displayName,
-      createdAtUnixMs: now,
-      messageCounter: counter,
-      text: _androidFileMessageText(fileName, scan.totalSize),
-      opaqueEnvelopeBase64: '',
-      deliveryStatus: failedDeliveries > 0
-          ? AndroidDeliveryStatus.pending
-          : hasServerMailbox
-          ? AndroidDeliveryStatus.serverMailbox
-          : AndroidDeliveryStatus.sent,
-      deliveryDetail: delivery.join('\n'),
-      deliveryUpdatedAtUnixMs: DateTime.now().millisecondsSinceEpoch,
-      attachmentUri: file.uri,
-      attachmentPath: file.uri.startsWith('file://')
-          ? Uri.parse(file.uri).toFilePath()
-          : null,
-      attachmentMime: mime,
-    );
-    await db.addMessage(message);
-    await db.setNextMessageCounter(counter);
+    final updated =
+        await _refreshAndroidLogicalDelivery(transferId) ??
+        (throw SecureStoreException('群文件逻辑消息更新失败：$transferId'));
     await _refreshAndroidChatStore();
-    return message;
+    return updated.copyWith(
+      deliveryDetail: deliveryResults.map((result) => result.detail).join('\n'),
+    );
   }
 
   Future<List<String>> _broadcastAndroidGroupControl({
     required AndroidGroupRecord group,
+    required List<AndroidGroupMemberRecord> members,
     required Map<String, Object?> payload,
     required Iterable<AndroidGroupMemberRecord> recipients,
+    Future<void> Function()? onStaged,
   }) async {
     final db = await _ensureAndroidDbStore();
-    var counter = await db.getNextMessageCounter();
-    final delivery = <String>[];
-    await _ensureAndroidP2pListening();
     final seen = <String>{};
-    final jobs = <Future<_AndroidMemberDeliveryResult> Function()>[];
-    for (final member in recipients) {
-      if (!seen.add(member.keyId) || member.contactJson.trim().isEmpty) {
-        continue;
-      }
+    final targets = recipients
+        .where((member) => seen.add(member.keyId))
+        .toList(growable: false);
+    final missingContact = targets
+        .where((member) => member.contactJson.trim().isEmpty)
+        .map((member) => member.displayLabel)
+        .toList(growable: false);
+    if (missingContact.isNotEmpty) {
+      throw SecureStoreException(
+        '群组控制通知缺少收件人 contact，未提交本地群变更：'
+        '${missingContact.join('、')}。',
+      );
+    }
+    if (targets.length > _androidMaximumOfflineGroupRecipients) {
+      throw SecureStoreException(
+        '群组控制通知收件人超过 '
+        '$_androidMaximumOfflineGroupRecipients 人资源上限。',
+      );
+    }
+    final firstCounter = await db.getNextMessageCounter();
+    await db.setNextMessageCounter(
+      androidAdvanceMessageCounter(firstCounter, targets.length),
+    );
+    var counter = firstCounter;
+    final event = _groupEventFromPayload(group, payload);
+    final logicalMessageId = 'group-event:${event.eventId}';
+    final children = <AndroidPendingEnvelopeRecord>[];
+    for (var index = 0; index < targets.length; index += 1) {
+      final member = targets[index];
       final contact = member.toContactRecord();
       final envelope = _encryptAndroidGroupControlEnvelope(
         recipient: contact,
@@ -4293,45 +4938,58 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         messageCounter: counter,
       );
       counter = androidAdvanceMessageCounter(envelope.messageCounter);
-      jobs.add(() async {
-        try {
-          final status = await _deliverAndroidOpaqueEnvelopeToContact(
-            contact: contact,
-            envelopeId: envelope.envelopeId,
-            envelopeBase64: envelope.envelopeBase64,
-          );
-          return _AndroidMemberDeliveryResult(
-            detail: '${member.displayLabel}: $status',
-            envelopeId: envelope.envelopeId,
-          );
-        } catch (error) {
-          return _AndroidMemberDeliveryResult(
-            detail: '${member.displayLabel}: $error',
-            failed: true,
-            envelopeId: envelope.envelopeId,
-          );
-        }
-      });
+      children.add(
+        AndroidPendingEnvelopeRecord(
+          envelopeId: envelope.envelopeId,
+          logicalMessageId: logicalMessageId,
+          logicalKind: AndroidPendingEnvelopeKind.groupControl,
+          recipientKeyId: contact.keyId,
+          recipientDisplayName: member.displayLabel,
+          recipientContactJson: contact.contactJson,
+          envelopeBase64: envelope.envelopeBase64,
+          createdAtUnixMs: event.createdAtUnixMs,
+          childIndex: index,
+          childCount: targets.length,
+        ),
+      );
     }
+    final stagedBytes = children.fold<int>(
+      0,
+      (total, child) => total + child.envelopeBase64.length,
+    );
+    if (stagedBytes > _androidMaximumStagedOutboundEnvelopeBytes) {
+      throw const SecureStoreException('群组控制通知 outbox 超过 256 MiB 安全上限。');
+    }
+    final committedMembers = _calculateAndroidConsensusAdmissions(
+      group: group,
+      members: members,
+      events: [
+        ...await db.getGroupEvents(groupId: group.groupId),
+        event,
+      ],
+    );
+    await db.stageGroupControlTransition(
+      group: group,
+      members: committedMembers,
+      event: event,
+      children: children,
+    );
+    if (onStaged != null) await onStaged();
+    if (children.isEmpty) return const [];
+
+    await _ensureAndroidP2pListening();
+    final jobs = children
+        .map<Future<_AndroidMemberDeliveryResult> Function()>(
+          (child) =>
+              () => _deliverAndroidPendingEnvelope(child),
+        )
+        .toList(growable: false);
     final deliveryResults = await _runAndroidLimitedConcurrency(
       jobs,
       concurrency: _androidGroupDeliveryConcurrency,
     );
-    delivery.addAll(deliveryResults.map((result) => result.detail));
-    await db.setNextMessageCounter(counter);
-    await db.addGroupEvent(_groupEventFromPayload(group, payload));
-    return delivery;
-  }
-
-  Future<void> _deactivateAndroidGroupIfMembershipLossLeavesTooFewMembers({
-    required String eventType,
-    required String groupId,
-    required List<AndroidGroupMemberRecord> members,
-  }) async {
-    if (eventType != 'member_left' && eventType != 'member_removed') return;
-    if (!androidGroupShouldAutoDissolveForMembers(members)) return;
-    final db = await _ensureAndroidDbStore();
-    await db.deactivateGroup(groupId);
+    await _refreshAndroidLogicalDelivery(logicalMessageId);
+    return deliveryResults.map((result) => result.detail).toList();
   }
 
   Map<String, Object?> _androidConsensusEndorsementSigningMap({
@@ -4486,7 +5144,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     required List<AndroidGroupMemberRecord> members,
   }) {
     if (group.policy != AndroidGroupPolicy.consensus) {
-      throw const SecureStoreException('非共识群不能接收共识背书事件。');
+      throw const AndroidInvalidEnvelopePayloadException('非共识群不能接收共识背书事件。');
     }
     final candidateKeyId = payload['candidate_key_id']?.toString() ?? '';
     final actorKeyId = payload['actor_key_id']?.toString() ?? '';
@@ -4494,7 +5152,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     if (candidateKeyId.isEmpty ||
         actorKeyId.isEmpty ||
         endorsementValue is! Map) {
-      throw const SecureStoreException('共识背书事件缺少候选人或签名。');
+      throw const AndroidInvalidEnvelopePayloadException('共识背书事件缺少候选人或签名。');
     }
     AndroidGroupMemberRecord? candidate;
     AndroidGroupMemberRecord? endorser;
@@ -4503,10 +5161,10 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       if (member.keyId == actorKeyId) endorser = member;
     }
     if (candidate == null || !(candidate.isAccepted || candidate.isActive)) {
-      throw const SecureStoreException('共识背书候选人状态无效。');
+      throw const AndroidMailboxMissingPrerequisiteException('共识背书候选人状态无效。');
     }
     if (endorser == null || !endorser.isActive) {
-      throw const SecureStoreException('共识背书者不是活跃群成员。');
+      throw const AndroidInvalidEnvelopePayloadException('共识背书者不是活跃群成员。');
     }
     final endorsement = endorsementValue.cast<String, Object?>();
     if (!_verifyAndroidConsensusEndorsement(
@@ -4515,19 +5173,17 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       candidateKeyId: candidateKeyId,
       endorsement: endorsement,
     )) {
-      throw const SecureStoreException('共识背书签名校验失败。');
+      throw const AndroidInvalidEnvelopePayloadException('共识背书签名校验失败。');
     }
   }
 
-  Future<List<AndroidGroupMemberRecord>> _applyAndroidConsensusAdmissions({
+  List<AndroidGroupMemberRecord> _calculateAndroidConsensusAdmissions({
     required AndroidGroupRecord group,
     required List<AndroidGroupMemberRecord> members,
-  }) async {
+    required List<AndroidGroupEventRecord> events,
+  }) {
     if (group.policy != AndroidGroupPolicy.consensus) return members;
-    final db = await _ensureAndroidDbStore();
-    final events = await db.getGroupEvents(groupId: group.groupId);
     final identityKeyId = _secureIdentity?.keyId ?? '';
-    var changed = false;
     final updated = [...members];
     for (var index = 0; index < updated.length; index += 1) {
       final candidate = updated[index];
@@ -4563,10 +5219,6 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         joinedAtUnixMs: candidate.joinedAtUnixMs ?? now,
         updatedAtUnixMs: now,
       );
-      changed = true;
-    }
-    if (changed) {
-      await db.upsertGroupMembers(updated);
     }
     return updated;
   }
@@ -4660,8 +5312,6 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       epoch: currentGroup.epoch + 1,
       updatedAtUnixMs: now,
     );
-    await db.upsertGroup(updatedGroup);
-    await db.upsertGroupMembers(updatedMembers);
     final payload = _groupControlPayload(
       type: 'member_accepted',
       group: updatedGroup,
@@ -4670,6 +5320,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     );
     final delivery = await _broadcastAndroidGroupControl(
       group: updatedGroup,
+      members: updatedMembers,
       payload: payload,
       recipients: updatedMembers.where(
         (member) => androidGroupMemberShouldReceiveMembershipControl(
@@ -4678,10 +5329,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         ),
       ),
     );
-    updatedMembers = await _applyAndroidConsensusAdmissions(
-      group: updatedGroup,
-      members: updatedMembers,
-    );
+    updatedMembers = await db.getGroupMembers(groupId: updatedGroup.groupId);
     await _refreshAndroidChatStore();
     if (!mounted) return;
     AndroidGroupMemberRecord? acceptedSelf;
@@ -4744,8 +5392,6 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       isActive: shouldDissolve ? false : currentGroup.isActive,
       updatedAtUnixMs: now,
     );
-    await db.upsertGroup(updatedGroup);
-    await db.upsertGroupMembers(updatedMembers);
     final payload = _groupControlPayload(
       type: 'member_left',
       group: updatedGroup,
@@ -4758,6 +5404,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     );
     final delivery = await _broadcastAndroidGroupControl(
       group: updatedGroup,
+      members: updatedMembers,
       payload: payload,
       recipients: updatedMembers.where(
         (member) => androidGroupMemberShouldReceiveMembershipControl(
@@ -4802,7 +5449,6 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
             : member,
       );
     }
-    await db.upsertGroupMembers(updatedMembers);
     final shouldDissolve = androidGroupShouldAutoDissolveForMembers(
       updatedMembers,
     );
@@ -4814,22 +5460,6 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       isActive: shouldDissolve ? false : currentGroup.isActive,
       updatedAtUnixMs: now,
     );
-    await db.upsertGroup(updatedGroup);
-    await _refreshAndroidChatStore();
-    if (mounted) {
-      setState(() {
-        _androidHomeTab = _AndroidHomeTab.contacts;
-        _selectedAndroidGroupId = null;
-        _details = shouldDissolve
-            ? _androidGroupDissolvedText(
-                '已退出群组：${currentGroup.displayName}',
-                dissolutionReasons,
-                suffix: '正在通知其他成员...',
-              )
-            : '已退出群组：${currentGroup.displayName}。正在通知其他成员...';
-      });
-    }
-    onLocalLeaveApplied?.call();
     final payload = _groupControlPayload(
       type: 'member_left',
       group: updatedGroup,
@@ -4842,6 +5472,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     );
     final delivery = await _broadcastAndroidGroupControl(
       group: updatedGroup,
+      members: updatedMembers,
       payload: payload,
       recipients: updatedMembers.where(
         (member) => androidGroupMemberShouldReceiveMembershipControl(
@@ -4849,6 +5480,23 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
           identity.keyId,
         ),
       ),
+      onStaged: () async {
+        await _refreshAndroidChatStore();
+        if (mounted) {
+          setState(() {
+            _androidHomeTab = _AndroidHomeTab.contacts;
+            _selectedAndroidGroupId = null;
+            _details = shouldDissolve
+                ? _androidGroupDissolvedText(
+                    '已退出群组：${currentGroup.displayName}',
+                    dissolutionReasons,
+                    suffix: '正在通知其他成员...',
+                  )
+                : '已退出群组：${currentGroup.displayName}。正在通知其他成员...';
+          });
+        }
+        onLocalLeaveApplied?.call();
+      },
     );
     await _refreshAndroidChatStore();
     if (!mounted) return;
@@ -4893,7 +5541,6 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
             : member,
       );
     }
-    await db.upsertGroupMembers(updatedMembers);
     final shouldDissolve = androidGroupShouldAutoDissolveForMembers(
       updatedMembers,
     );
@@ -4905,7 +5552,6 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       isActive: shouldDissolve ? false : group.isActive,
       updatedAtUnixMs: now,
     );
-    await db.upsertGroup(updatedGroup);
     final payload = _groupControlPayload(
       type: 'member_removed',
       group: updatedGroup,
@@ -4928,6 +5574,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     ];
     final delivery = await _broadcastAndroidGroupControl(
       group: updatedGroup,
+      members: updatedMembers,
       payload: payload,
       recipients: recipients,
     );
@@ -4986,22 +5633,21 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       epoch: group.epoch + 1,
       updatedAtUnixMs: now,
     );
-    await db.upsertGroup(updatedGroup);
-    await db.upsertGroupMembers(members);
     final payload = _groupControlPayload(
       type: 'group_invite',
       group: updatedGroup,
       members: members,
       now: now,
     );
-    final recipients = [
-      ...newMembers,
-      ...existing.where(
-        (member) => member.isActive && member.keyId != identity.keyId,
+    final recipients = members.where(
+      (member) => androidGroupMemberShouldReceiveMembershipControl(
+        member,
+        identity.keyId,
       ),
-    ];
+    );
     final delivery = await _broadcastAndroidGroupControl(
       group: updatedGroup,
+      members: members,
       payload: payload,
       recipients: recipients,
     );
@@ -5210,7 +5856,6 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       epoch: group.epoch + 1,
       updatedAtUnixMs: now,
     );
-    await db.upsertGroup(updatedGroup);
     final endorsement = _createAndroidConsensusEndorsement(
       group: updatedGroup,
       candidate: candidateRecord,
@@ -5223,27 +5868,25 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       now: now,
       extra: {'candidate_key_id': candidate.keyId, 'endorsement': endorsement},
     );
-    final recipients = [
-      ...members.where((item) => item.isActive && item.keyId != identity.keyId),
-      candidateRecord,
+    final recipients = members.where(
+      (item) => androidGroupMemberShouldReceiveMembershipControl(
+        item,
+        identity.keyId,
+      ),
+    );
+    final locallyVerifiedMembers = [
+      for (final item in members)
+        item.keyId == candidateRecord.keyId
+            ? item.copyWith(trustState: AndroidGroupTrustState.verified)
+            : item,
     ];
     final delivery = await _broadcastAndroidGroupControl(
       group: updatedGroup,
+      members: locallyVerifiedMembers,
       payload: payload,
       recipients: recipients,
     );
-    await db.updateGroupMemberState(
-      groupId: group.groupId,
-      keyId: candidateRecord.keyId,
-      status: candidateRecord.status,
-      trustState: AndroidGroupTrustState.verified,
-      joinedAtUnixMs: candidateRecord.joinedAtUnixMs,
-    );
-    final latestMembers = await db.getGroupMembers(groupId: group.groupId);
-    final admittedMembers = await _applyAndroidConsensusAdmissions(
-      group: updatedGroup,
-      members: latestMembers,
-    );
+    final admittedMembers = await db.getGroupMembers(groupId: group.groupId);
     final admitted = admittedMembers.any(
       (item) => item.keyId == candidateRecord.keyId && item.isActive,
     );
@@ -5380,7 +6023,6 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       epoch: group.epoch + 1,
       updatedAtUnixMs: now,
     );
-    await db.upsertGroup(updatedGroup);
     final payload = _groupControlPayload(
       type: 'group_renamed',
       group: updatedGroup,
@@ -5389,9 +6031,13 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     );
     final delivery = await _broadcastAndroidGroupControl(
       group: updatedGroup,
+      members: members,
       payload: payload,
       recipients: members.where(
-        (member) => member.isActive && member.keyId != identity.keyId,
+        (member) => androidGroupMemberShouldReceiveMembershipControl(
+          member,
+          identity.keyId,
+        ),
       ),
     );
     await _refreshAndroidChatStore();
@@ -5424,7 +6070,6 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       epoch: group.epoch + 1,
       updatedAtUnixMs: now,
     );
-    await db.upsertGroup(updatedGroup);
     final payload = _groupControlPayload(
       type: 'group_avatar_updated',
       group: updatedGroup,
@@ -5433,9 +6078,13 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     );
     final delivery = await _broadcastAndroidGroupControl(
       group: updatedGroup,
+      members: members,
       payload: payload,
       recipients: members.where(
-        (member) => member.isActive && member.keyId != identity.keyId,
+        (member) => androidGroupMemberShouldReceiveMembershipControl(
+          member,
+          identity.keyId,
+        ),
       ),
     );
     await _refreshAndroidChatStore();
@@ -6009,7 +6658,6 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     }
 
     final deleted = await db.deleteContact(current.keyId);
-    _seenIncomingMessageCounts.remove(current.keyId);
     _androidIncomingMessageCounts = {
       for (final entry in _androidIncomingMessageCounts.entries)
         if (entry.key != current.keyId) entry.key: entry.value,
@@ -6064,10 +6712,10 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       opaqueEnvelopeBase64: outbound.envelopeBase64,
       deliveryStatus: AndroidDeliveryStatus.created,
     );
-    await db.addMessage(message);
     await db.setNextMessageCounter(
       androidAdvanceMessageCounter(outbound.messageCounter),
     );
+    await db.addMessage(message);
     await _refreshAndroidChatStore();
     return message;
   }
@@ -6232,6 +6880,9 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         : file.mime.trim();
     final transferId = _randomAndroidTransferId();
     final chunkCount = scan.chunkHashes.length;
+    await db.setNextMessageCounter(
+      androidAdvanceMessageCounter(messageCounter, chunkCount + 1),
+    );
 
     final manifestPayload = <String, Object?>{
       'version': 1,
@@ -6321,9 +6972,6 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       );
     }
     await db.addMessage(message);
-    await db.setNextMessageCounter(
-      androidAdvanceMessageCounter(messageCounter, chunkCount + 1),
-    );
     await _refreshAndroidChatStore();
     return message;
   }
@@ -6489,6 +7137,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     try {
       final ack = await _sendAndroidP2pEnvelopeWithCooldown(
         recipientKeyId: contact.keyId,
+        envelopeId: message.envelopeId,
         ticket: ticket,
         envelopeBytes: _decodeOpaqueEnvelopeBase64(
           message.opaqueEnvelopeBase64,
@@ -6571,10 +7220,42 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     for (final envelope in envelopes) {
       await _sendAndroidP2pEnvelopeWithCooldown(
         recipientKeyId: recipientKeyId,
+        envelopeId: envelope.envelopeId,
+        allowDeferred: true,
         ticket: ticket,
         envelopeBytes: _decodeOpaqueEnvelopeBase64(envelope.envelopeBase64),
       );
     }
+    final identity = _requireAndroidIdentity();
+    final db = await _ensureAndroidDbStore();
+    for (final envelope in envelopes) {
+      final row = await db.relayHa.outgoing(
+        senderKeyId: identity.keyId,
+        recipientKeyId: recipientKeyId,
+        envelopeId: envelope.envelopeId,
+      );
+      if (row?['delivery_state'] != 'delivered') {
+        throw const AndroidP2pException('文件尚未取得全部分片的业务接收证明。');
+      }
+    }
+  }
+
+  Future<void> _stageAndroidEnvelopeBatch(
+    String recipientKeyId,
+    List<_AndroidEnvelopeToSend> envelopes,
+  ) async {
+    final db = await _ensureAndroidDbStore();
+    final relay = await _getAndroidRelayClient();
+    await AndroidRelayHaAdapter.stageBatch(
+      db: db,
+      clusterId: relay.clusterId,
+      senderKeyId: _requireAndroidIdentity().keyId,
+      recipientKeyId: recipientKeyId,
+      envelopes: {
+        for (final envelope in envelopes)
+          envelope.envelopeId: envelope.envelopeBase64,
+      },
+    );
   }
 
   Future<Map<String, Object?>> _markAndroidFileTransferDelivery({
@@ -6643,6 +7324,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     bool useServerFallback = true,
   }) async {
     final envelopes = await _androidFileTransferEnvelopes(transfer);
+    await _stageAndroidEnvelopeBatch(contact.keyId, envelopes);
     Future<Map<String, Object?>> fallback(String detail) {
       if (!useServerFallback) {
         return _markAndroidFileTransferPending(
@@ -6870,6 +7552,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
             try {
               final ack = await _sendAndroidP2pEnvelopeWithCooldown(
                 recipientKeyId: activeContact.keyId,
+                envelopeId: message.envelopeId,
                 ticket: endpoint.p2pTicket,
                 envelopeBytes: _decodeOpaqueEnvelopeBase64(
                   message.opaqueEnvelopeBase64,
@@ -7053,23 +7736,87 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     await _refreshAndroidChatStore();
     await _ensureAndroidP2pListening();
     final db = await _ensureAndroidDbStore();
-    final pending = await db.getPendingMessages();
     final results = <Map<String, Object?>>[];
+    final pendingChildren = await db.getPendingEnvelopes();
+    final stagedLogicalIds = await db.getStagedOutboundLogicalMessageIds();
+    final childrenByLogicalAndRecipient =
+        <String, Map<String, List<AndroidPendingEnvelopeRecord>>>{};
+    for (final child in pendingChildren) {
+      childrenByLogicalAndRecipient
+          .putIfAbsent(child.logicalMessageId, () => {})
+          .putIfAbsent(child.recipientKeyId, () => [])
+          .add(child);
+    }
+    for (final logicalEntry in childrenByLogicalAndRecipient.entries) {
+      for (final recipientChildren in logicalEntry.value.values) {
+        recipientChildren.sort(
+          (left, right) => left.childIndex.compareTo(right.childIndex),
+        );
+        final first = recipientChildren.first;
+        final result = await _deliverAndroidPendingEnvelopeBatch(
+          first.toContactRecord(),
+          first.recipientDisplayName,
+          recipientChildren,
+          serverUrl: serverUrl,
+        );
+        results.add({
+          'ack': {
+            'status': result.failed ? 'pending' : 'ok',
+            'envelope_id': first.envelopeId,
+            'logical_message_id': logicalEntry.key,
+            'detail': result.detail,
+          },
+        });
+      }
+      await _refreshAndroidLogicalDelivery(logicalEntry.key);
+    }
+    for (final logicalMessageId in stagedLogicalIds.difference(
+      childrenByLogicalAndRecipient.keys.toSet(),
+    )) {
+      await _refreshAndroidLogicalDelivery(logicalMessageId);
+    }
+
+    final pending = await db.getPendingMessages();
     for (final message in pending) {
+      if (stagedLogicalIds.contains(message.envelopeId)) continue;
+      final fileTransfer = await db.getFileTransferByMessageEnvelopeId(
+        message.envelopeId,
+      );
+      if (message.opaqueEnvelopeBase64.trim().isEmpty && fileTransfer == null) {
+        const detail = '旧版群发记录缺少可重试的子信封；保留待处理状态。';
+        await db.updateMessageDelivery(
+          envelopeId: message.envelopeId,
+          deliveryStatus: AndroidDeliveryStatus.pending,
+          deliveryDetail: detail,
+        );
+        results.add({
+          'ack': {
+            'status': 'pending',
+            'envelope_id': message.envelopeId,
+            'detail': detail,
+          },
+        });
+        continue;
+      }
       results.add(
         await _deliverAndroidP2pMessage(message, serverUrl: serverUrl),
       );
-      await _refreshAndroidChatStore();
     }
-    final remainingPending = await db.getPendingMessageCount();
+    await _refreshAndroidChatStore();
+    final remainingPendingMessages = await db.getPendingMessageCount();
+    final remainingPendingGroupControls = await db
+        .getPendingGroupControlCount();
     final sent = results.where((result) {
       final status = (result['ack'] as Map?)?['status'];
       return status == 'ok' || status == AndroidDeliveryStatus.serverMailbox;
     }).length;
     return {
-      'attempted': pending.length,
+      'attempted': results.length,
       'sent': sent,
-      'remaining_pending': remainingPending,
+      'remaining_pending':
+          remainingPendingMessages + remainingPendingGroupControls,
+      'remaining_pending_messages': remainingPendingMessages,
+      'remaining_pending_group_controls': remainingPendingGroupControls,
       'results': results,
     };
   }
@@ -7084,6 +7831,8 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         'pulled': 0,
         'imported': 0,
         'duplicates': 0,
+        'quarantined': 0,
+        'deferred_remaining': 0,
         'acked': 0,
         'skipped': 'already_running',
         'items': const <Map<String, Object?>>[],
@@ -7096,6 +7845,8 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       }
       await _refreshAndroidChatStore();
       final identity = _requireAndroidIdentity();
+      final db = await _ensureAndroidDbStore();
+      final pruned = await db.pruneMailboxReliability();
       final client = _createEnvelopeServerClient(serverUrl);
       try {
         final pullRequest = _nativeCore.createMailboxPullRequest(
@@ -7109,15 +7860,73 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
             pullRequestJson: pullRequest.requestJson,
           ),
         );
-        final imported = <Map<String, Object?>>[];
-        final ackEnvelopeIds = <String>[];
+        final items = <Map<String, Object?>>[];
+        final ackEnvelopeIds = <String>{};
+        var importedCount = 0;
+        var duplicateCount = 0;
+        var quarantinedCount = 0;
         for (final envelope in response.envelopes) {
+          final existingQuarantine = await db.getMailboxQuarantine(
+            envelope.envelopeId,
+          );
+          if (existingQuarantine != null) {
+            ackEnvelopeIds.add(envelope.envelopeId);
+            items.add({
+              'envelope_id': envelope.envelopeId,
+              'quarantined': true,
+              'reason_code': existingQuarantine.reasonCode,
+            });
+            continue;
+          }
+          final existingDeferred = await db.getDeferredMailboxEnvelope(
+            envelope.envelopeId,
+          );
+          if (existingDeferred != null) {
+            // The authenticated raw body is already durable. A previous ACK
+            // may have been lost, so ACK this server copy again and retry the
+            // local causal queue after the complete mailbox page is imported.
+            ackEnvelopeIds.add(envelope.envelopeId);
+            items.add({
+              'envelope_id': envelope.envelopeId,
+              'deferred': true,
+              'reason_code': existingDeferred.reasonCode,
+            });
+            continue;
+          }
+          final senderCandidates = _androidKnownContactCandidates()
+              .where((candidate) => candidate.keyId == envelope.senderKeyId)
+              .toList(growable: false);
+          if (senderCandidates.isEmpty) {
+            final quarantinedAt = DateTime.now().millisecondsSinceEpoch;
+            await db.addMailboxQuarantine(
+              envelopeId: envelope.envelopeId,
+              senderKeyId: envelope.senderKeyId,
+              reasonCode: 'unknown_sender',
+              reasonDetail: 'mailbox sender_key_id 不在联系人或群成员目录中。',
+              envelopeBase64: envelope.envelopeBase64,
+              quarantinedAtUnixMs: quarantinedAt,
+            );
+            ackEnvelopeIds.add(envelope.envelopeId);
+            quarantinedCount += 1;
+            items.add({
+              'envelope_id': envelope.envelopeId,
+              'quarantined': true,
+              'reason_code': 'unknown_sender',
+            });
+            continue;
+          }
           try {
             final importResult = await _importAndroidOpaqueEnvelopeBase64(
               envelope.envelopeBase64,
+              targetSenderContact: senderCandidates.first,
               updateDetails: false,
             );
-            imported.add({
+            if (importResult.duplicate) {
+              duplicateCount += 1;
+            } else {
+              importedCount += 1;
+            }
+            items.add({
               'envelope_id': envelope.envelopeId,
               'duplicate': importResult.duplicate,
               'text': importResult.message.text,
@@ -7125,38 +7934,98 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
             });
             ackEnvelopeIds.add(envelope.envelopeId);
           } catch (error) {
-            imported.add({
+            final classification = classifyAndroidMailboxImportFailure(error);
+            var deferred = false;
+            var quarantined = false;
+            if (!classification.permanent &&
+                classification.reasonCode == 'missing_prerequisite') {
+              deferred = await db.stageDeferredMailboxEnvelope(
+                recipientIdentityKeyId: identity.keyId,
+                envelopeId: envelope.envelopeId,
+                senderKeyId: envelope.senderKeyId,
+                envelopeBase64: envelope.envelopeBase64,
+                reasonCode: classification.reasonCode,
+                reasonDetail: classification.detail,
+                nowUnixMs: DateTime.now().millisecondsSinceEpoch,
+              );
+              ackEnvelopeIds.add(envelope.envelopeId);
+              if (!deferred) {
+                quarantined = true;
+                quarantinedCount += 1;
+              }
+            } else if (classification.permanent) {
+              await db.addMailboxQuarantine(
+                recipientIdentityKeyId: identity.keyId,
+                envelopeId: envelope.envelopeId,
+                senderKeyId: envelope.senderKeyId,
+                reasonCode: classification.reasonCode,
+                reasonDetail: classification.detail,
+                envelopeBase64: envelope.envelopeBase64,
+                quarantinedAtUnixMs: DateTime.now().millisecondsSinceEpoch,
+              );
+              ackEnvelopeIds.add(envelope.envelopeId);
+              quarantined = true;
+              quarantinedCount += 1;
+            }
+            items.add({
               'envelope_id': envelope.envelopeId,
-              'error': error.toString(),
+              'error': classification.detail,
+              'reason_code': classification.reasonCode,
+              if (deferred) 'deferred': true,
+              if (quarantined) 'quarantined': true,
             });
+            _logDiagnostic(
+              'warn',
+              quarantined
+                  ? 'mailbox_item_quarantined'
+                  : 'mailbox_item_deferred',
+              {
+                'envelope_id': envelope.envelopeId,
+                'sender_key_id': envelope.senderKeyId,
+                'reason_code': classification.reasonCode,
+                'error': classification.detail,
+              },
+            );
           }
         }
+
+        // A predecessor can appear later in the same oldest-50 page. Retry
+        // only after the page has settled so future-epoch group events can be
+        // imported without consuming their replay counters prematurely.
+        final deferredRetry = await _retryAndroidDeferredMailbox();
+        importedCount += deferredRetry.imported;
+        duplicateCount += deferredRetry.duplicates;
+        quarantinedCount += deferredRetry.quarantined;
+        items.addAll(deferredRetry.items);
 
         var deletedCount = 0;
         if (ackEnvelopeIds.isNotEmpty) {
           final ackRequest = _nativeCore.createMailboxAckRequest(
             identityJson: identity.identityJson,
-            envelopeIds: ackEnvelopeIds,
+            envelopeIds: ackEnvelopeIds.toList(growable: false),
           );
           final ack = await client.ackMailbox(
             recipientKeyId: identity.keyId,
             ackRequestJson: ackRequest.requestJson,
           );
           deletedCount = ack.deletedCount;
+          await db.markMailboxQuarantineAcknowledged(
+            envelopeIds: ackEnvelopeIds,
+            acknowledgedAtUnixMs: DateTime.now().millisecondsSinceEpoch,
+          );
         }
         await _refreshAndroidChatStore();
+        final deferredRemaining =
+            (await db.getDeferredMailboxEnvelopes()).length;
         final result = {
           'pulled': response.envelopes.length,
-          'imported': imported
-              .where(
-                (item) => item['error'] == null && item['duplicate'] != true,
-              )
-              .length,
-          'duplicates': imported
-              .where((item) => item['duplicate'] == true)
-              .length,
+          'imported': importedCount,
+          'duplicates': duplicateCount,
+          'quarantined': quarantinedCount,
           'acked': deletedCount,
-          'items': imported,
+          'deferred_remaining': deferredRemaining,
+          'pruned': pruned.removedQuarantineCount + pruned.removedDeferredCount,
+          'items': items,
         };
         if (mounted && updateDetails) {
           setState(() {
@@ -7165,6 +8034,8 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
               'pulled: ${result['pulled']}',
               'imported: ${result['imported']}',
               'duplicates: ${result['duplicates']}',
+              'quarantined: ${result['quarantined']}',
+              'deferred: ${result['deferred_remaining']}',
               'acked: ${result['acked']}',
             ].join('\n');
           });
@@ -7176,6 +8047,78 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     } finally {
       _androidMailboxPullInFlight = false;
     }
+  }
+
+  Future<_AndroidDeferredMailboxRetryResult>
+  _retryAndroidDeferredMailbox() async {
+    final db = await _ensureAndroidDbStore();
+    final records = await db.getDeferredMailboxEnvelopes();
+    var imported = 0;
+    var duplicates = 0;
+    var quarantined = 0;
+    final items = <Map<String, Object?>>[];
+    for (final record in records) {
+      final senderCandidates = _androidKnownContactCandidates()
+          .where((candidate) => candidate.keyId == record.senderKeyId)
+          .toList(growable: false);
+      try {
+        if (senderCandidates.isEmpty) {
+          throw const AndroidEnvelopeCiphertextRejectedException(
+            '已知发送方的信封认证或解密失败。',
+          );
+        }
+        final result = await _importAndroidOpaqueEnvelopeBase64(
+          record.envelopeBase64,
+          targetSenderContact: senderCandidates.first,
+          updateDetails: false,
+        );
+        await db.deleteDeferredMailboxEnvelope(record.envelopeId);
+        if (result.duplicate) {
+          duplicates += 1;
+        } else {
+          imported += 1;
+        }
+        items.add({
+          'envelope_id': record.envelopeId,
+          'deferred_retry': 'imported',
+          'duplicate': result.duplicate,
+        });
+      } catch (error) {
+        final classification = classifyAndroidMailboxImportFailure(error);
+        final attemptedAt = DateTime.now().millisecondsSinceEpoch;
+        if (classification.permanent) {
+          await db.moveDeferredMailboxEnvelopeToQuarantine(
+            recipientIdentityKeyId: _requireAndroidIdentity().keyId,
+            record: record,
+            reasonCode: classification.reasonCode,
+            reasonDetail: classification.detail,
+            quarantinedAtUnixMs: attemptedAt,
+          );
+          quarantined += 1;
+        } else {
+          await db.updateDeferredMailboxFailure(
+            record: record,
+            reasonCode: classification.reasonCode,
+            reasonDetail: classification.detail,
+            attemptedAtUnixMs: attemptedAt,
+          );
+        }
+        items.add({
+          'envelope_id': record.envelopeId,
+          'deferred_retry': classification.permanent
+              ? 'quarantined'
+              : 'waiting',
+          'reason_code': classification.reasonCode,
+          'error': classification.detail,
+        });
+      }
+    }
+    return _AndroidDeferredMailboxRetryResult(
+      imported: imported,
+      duplicates: duplicates,
+      quarantined: quarantined,
+      items: items,
+    );
   }
 
   Future<Map<String, Object?>> _syncAndroidDeliveryReceipts({
@@ -7272,7 +8215,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
   Uint8List _decodeOpaqueEnvelopeBase64(String value) {
     final trimmed = value.trim();
     if (trimmed.isEmpty) {
-      throw const SecureStoreException('离线信封 base64 为空。');
+      throw const AndroidInvalidEnvelopePayloadException('离线信封 base64 为空。');
     }
     return base64Url.decode(base64Url.normalize(trimmed));
   }
@@ -7316,7 +8259,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
   Future<AndroidSavedFile> _createAndroidOfflineEnvelopeFile() {
     return _secureStore.createSavedFile(
       name: '${_randomOpaqueEnvelopeFileName()}.envelope',
-      mime: 'application/octet-stream',
+      mime: _androidEnvelopeFileMime,
       childDir: 'sealed',
     );
   }
@@ -7636,6 +8579,9 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     );
     final transferId = _randomAndroidTransferId();
     final chunkCount = scan.chunkHashes.length;
+    await db.setNextMessageCounter(
+      androidAdvanceMessageCounter(messageCounter, chunkCount + 1),
+    );
     final manifestPayload = <String, Object?>{
       'version': 1,
       'kind': 'offline_file_manifest',
@@ -7701,9 +8647,6 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         file: file,
         bytes: writtenBytes,
       );
-      await db.setNextMessageCounter(
-        androidAdvanceMessageCounter(messageCounter, chunkCount + 1),
-      );
       final savedPath = _androidSavedFileDisplayPath(sealedFile);
       final record = AndroidSealedEnvelopeRecord(
         envelopeId: outbound.envelopeId,
@@ -7743,6 +8686,368 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         await _secureStore.deleteSavedFile(
           uri: file.uri,
           path: file.displayPath,
+        );
+      }
+    }
+  }
+
+  void _ensureAndroidOfflineEnvelopeLineWithinLimit(String envelopeBase64) {
+    if (envelopeBase64.length > _androidMaximumOfflineEnvelopeLineCharacters) {
+      throw SecureStoreException(
+        '离线信封单行超过 '
+        '$_androidMaximumOfflineEnvelopeLineCharacters 字符资源上限。',
+      );
+    }
+  }
+
+  Future<_AndroidSealResult> _createAndroidGroupTextSealResult(
+    AndroidGroupRecord group,
+    String text,
+  ) async {
+    final normalizedText = text.trim();
+    if (normalizedText.isEmpty) {
+      throw const SecureStoreException('请先输入要密封的群组文本。');
+    }
+    if (!group.isActive) {
+      throw const SecureStoreException('群组已解散，不能继续离线密封。');
+    }
+
+    final identity = _requireAndroidIdentity();
+    final db = await _ensureAndroidDbStore();
+    final members = await db.getGroupMembers(groupId: group.groupId);
+    final recipients = _androidGroupMessageRecipients(
+      group: group,
+      members: members,
+      selfKeyId: identity.keyId,
+    );
+    if (recipients.isEmpty) {
+      throw const SecureStoreException('该群没有可离线密封的活跃成员。');
+    }
+    if (recipients.length > _androidMaximumOfflineGroupRecipients) {
+      throw SecureStoreException(
+        '群组离线密封收件人超过 '
+        '$_androidMaximumOfflineGroupRecipients 人资源上限。',
+      );
+    }
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final payload = _groupControlPayload(
+      type: 'group_message',
+      group: group,
+      members: members,
+      now: now,
+      extra: {'text': normalizedText},
+    );
+    final payloadBytes = Uint8List.fromList(utf8.encode(jsonEncode(payload)));
+    final firstCounter = await db.getNextMessageCounter();
+    await db.setNextMessageCounter(
+      androidAdvanceMessageCounter(firstCounter, recipients.length),
+    );
+    var counter = firstCounter;
+    String? firstEnvelopeId;
+    final file = await _createAndroidOfflineEnvelopeFile();
+    var writtenBytes = 0;
+    var completed = false;
+    try {
+      writtenBytes += await _appendAndroidSavedFileAscii(
+        file,
+        '$_androidOfflineGroupStreamMagic\n',
+      );
+      for (final member in recipients) {
+        final outbound = _nativeCore.encryptOpaqueFile(
+          identityJson: identity.identityJson,
+          recipientContactJson: member.contactJson,
+          filename: 'group-control.json',
+          mime: _androidGroupControlMime,
+          payloadBytes: payloadBytes,
+          messageCounter: counter,
+        );
+        _ensureAndroidOfflineEnvelopeLineWithinLimit(outbound.envelopeBase64);
+        firstEnvelopeId ??= outbound.envelopeId;
+        writtenBytes += await _appendAndroidSavedFileAscii(
+          file,
+          '${outbound.envelopeBase64}\n',
+        );
+        counter = androidAdvanceMessageCounter(outbound.messageCounter);
+      }
+
+      final sealedFile = await _secureStore.finishSavedFile(
+        file: file,
+        bytes: writtenBytes,
+      );
+      final savedPath = _androidSavedFileDisplayPath(sealedFile);
+      final record = AndroidSealedEnvelopeRecord(
+        envelopeId:
+            firstEnvelopeId ??
+            (throw const SecureStoreException('群组离线密封未生成任何收件人信封。')),
+        kind: 'group_text',
+        recipientKeyId: group.groupId,
+        recipientDisplayName: group.displayName,
+        createdAtUnixMs: now,
+        messageCounter: firstCounter,
+        sourceName: null,
+        payloadSize: payloadBytes.length,
+        envelopeSize: writtenBytes,
+        path: savedPath,
+        uri: sealedFile.uri,
+        displayPath: sealedFile.displayPath,
+        mime: sealedFile.mime,
+        sizeBytes: sealedFile.bytes,
+      );
+      await db.addSealedEnvelope(record);
+      completed = true;
+      return _AndroidSealResult(
+        label: '密封群组文本',
+        path: savedPath,
+        record: record,
+        details: [
+          '群组文本已密封为逐成员信封流。',
+          'group: ${group.displayName} / ${group.groupId}',
+          'recipients: ${recipients.length}',
+          '信封: ${record.envelopeId}',
+          'bytes: $writtenBytes',
+          savedPath,
+        ].join('\n'),
+      );
+    } finally {
+      if (!completed) {
+        await _secureStore.deleteSavedFile(
+          uri: file.uri,
+          path: file.displayPath,
+        );
+      }
+    }
+  }
+
+  Future<_AndroidSealResult?> _createAndroidGroupFileSealResult(
+    AndroidGroupRecord group,
+  ) async {
+    final pickedFile = await _secureStore.pickFileForSealing();
+    if (pickedFile == null) return null;
+    return _createAndroidGroupFileSealResultForPickedFile(group, pickedFile);
+  }
+
+  Future<_AndroidSealResult> _createAndroidGroupFileSealResultForPickedFile(
+    AndroidGroupRecord group,
+    AndroidPickedFile pickedFile,
+  ) async {
+    if (!group.isActive) {
+      throw const SecureStoreException('群组已解散，不能继续离线密封。');
+    }
+    final identity = _requireAndroidIdentity();
+    final db = await _ensureAndroidDbStore();
+    final members = await db.getGroupMembers(groupId: group.groupId);
+    final recipients = _androidGroupMessageRecipients(
+      group: group,
+      members: members,
+      selfKeyId: identity.keyId,
+    );
+    if (recipients.isEmpty) {
+      throw const SecureStoreException('该群没有可离线密封的活跃成员。');
+    }
+    if (recipients.length > _androidMaximumOfflineGroupRecipients) {
+      throw SecureStoreException(
+        '群组离线密封收件人超过 '
+        '$_androidMaximumOfflineGroupRecipients 人资源上限。',
+      );
+    }
+
+    final fileName = pickedFile.name.trim().isEmpty
+        ? 'file'
+        : pickedFile.name.trim();
+    final mime = pickedFile.mime.trim().isEmpty
+        ? 'application/octet-stream'
+        : pickedFile.mime.trim();
+    final scan = await _scanAndroidPickedFile(
+      pickedFile,
+      maxBytes: null,
+      chunkSizeBytes: _androidOfflineFileChunkBytes,
+    );
+    final chunkCount = scan.chunkHashes.length;
+    if (chunkCount > _androidMaximumOfflineGroupChunks) {
+      throw SecureStoreException(
+        '群组离线文件需要 $chunkCount 个分片，超过 '
+        '$_androidMaximumOfflineGroupChunks 个资源上限。',
+      );
+    }
+    final envelopesPerRecipient = chunkCount + 1;
+    final envelopeCount = recipients.length * envelopesPerRecipient;
+    if (envelopeCount > _androidMaximumOfflineGroupEnvelopeLines) {
+      throw SecureStoreException(
+        '群组离线文件需要 $envelopeCount 条密文，超过 '
+        '$_androidMaximumOfflineGroupEnvelopeLines 条资源上限。',
+      );
+    }
+
+    final transferId = _randomAndroidTransferId();
+    final manifestPayload = <String, Object?>{
+      'version': 1,
+      'kind': 'offline_file_manifest',
+      'transfer_id': transferId,
+      'conversation_id': group.groupId,
+      'group_id': group.groupId,
+      'group_epoch': group.epoch,
+      'filename': fileName,
+      'mime': mime,
+      'total_size': scan.totalSize,
+      'chunk_size': _androidOfflineFileChunkBytes,
+      'chunk_count': chunkCount,
+      'file_sha256': scan.fileSha256,
+      'chunk_sha256': scan.chunkHashes,
+    };
+    final manifestBytes = Uint8List.fromList(
+      utf8.encode(jsonEncode(manifestPayload)),
+    );
+    final firstCounter = await db.getNextMessageCounter();
+    await db.setNextMessageCounter(
+      androidAdvanceMessageCounter(firstCounter, envelopeCount),
+    );
+    String? firstEnvelopeId;
+    final output = await _createAndroidOfflineEnvelopeFile();
+    final digestSink = _AndroidDigestSink();
+    final digestInput = crypto.sha256.startChunkedConversion(digestSink);
+    var digestClosed = false;
+    var writtenPayloadBytes = 0;
+    var writtenBytes = 0;
+    var completed = false;
+    try {
+      writtenBytes += await _appendAndroidSavedFileAscii(
+        output,
+        '$_androidOfflineGroupStreamMagic\n',
+      );
+      for (
+        var recipientIndex = 0;
+        recipientIndex < recipients.length;
+        recipientIndex += 1
+      ) {
+        final member = recipients[recipientIndex];
+        final manifestEnvelope = _nativeCore.encryptOpaqueFile(
+          identityJson: identity.identityJson,
+          recipientContactJson: member.contactJson,
+          filename: '$fileName.manifest.json',
+          mime: _androidOfflineFileManifestMime,
+          payloadBytes: manifestBytes,
+          messageCounter: androidAdvanceMessageCounter(
+            firstCounter,
+            recipientIndex * envelopesPerRecipient,
+          ),
+        );
+        _ensureAndroidOfflineEnvelopeLineWithinLimit(
+          manifestEnvelope.envelopeBase64,
+        );
+        firstEnvelopeId ??= manifestEnvelope.envelopeId;
+        writtenBytes += await _appendAndroidSavedFileAscii(
+          output,
+          '${manifestEnvelope.envelopeBase64}\n',
+        );
+      }
+
+      for (var chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
+        final chunkBytes = await _readAndroidPickedFileChunkForSend(
+          file: pickedFile,
+          chunkIndex: chunkIndex,
+          totalSize: scan.totalSize,
+          chunkSizeBytes: _androidOfflineFileChunkBytes,
+        );
+        final actualHash = _sha256Base64Url(chunkBytes);
+        if (actualHash != scan.chunkHashes[chunkIndex]) {
+          throw SecureStoreException(
+            '群组离线密封期间源文件发生变化：分片 $chunkIndex SHA-256 不一致。',
+          );
+        }
+        digestInput.add(chunkBytes);
+        writtenPayloadBytes += chunkBytes.length;
+        for (
+          var recipientIndex = 0;
+          recipientIndex < recipients.length;
+          recipientIndex += 1
+        ) {
+          final member = recipients[recipientIndex];
+          final chunkEnvelope = _nativeCore.encryptOpaqueFile(
+            identityJson: identity.identityJson,
+            recipientContactJson: member.contactJson,
+            filename:
+                '$transferId.part${chunkIndex.toString().padLeft(6, '0')}',
+            mime: _androidOfflineFileChunkMime,
+            payloadBytes: chunkBytes,
+            messageCounter: androidAdvanceMessageCounter(
+              firstCounter,
+              recipientIndex * envelopesPerRecipient + chunkIndex + 1,
+            ),
+          );
+          _ensureAndroidOfflineEnvelopeLineWithinLimit(
+            chunkEnvelope.envelopeBase64,
+          );
+          writtenBytes += await _appendAndroidSavedFileAscii(
+            output,
+            '${chunkEnvelope.envelopeBase64}\n',
+          );
+        }
+      }
+
+      digestInput.close();
+      digestClosed = true;
+      final writtenDigest = digestSink.digest;
+      if (writtenPayloadBytes != scan.totalSize ||
+          writtenDigest == null ||
+          _digestBase64Url(writtenDigest) != scan.fileSha256) {
+        throw const SecureStoreException('群组离线密封期间源文件发生变化，已拒绝生成不一致信封。');
+      }
+
+      final sealedFile = await _secureStore.finishSavedFile(
+        file: output,
+        bytes: writtenBytes,
+      );
+      final savedPath = _androidSavedFileDisplayPath(sealedFile);
+      final record = AndroidSealedEnvelopeRecord(
+        envelopeId:
+            firstEnvelopeId ??
+            (throw const SecureStoreException('群组离线密封未生成 manifest。')),
+        kind: 'group_file',
+        recipientKeyId: group.groupId,
+        recipientDisplayName: group.displayName,
+        createdAtUnixMs: DateTime.now().millisecondsSinceEpoch,
+        messageCounter: firstCounter,
+        sourceName: fileName,
+        payloadSize: scan.totalSize,
+        envelopeSize: writtenBytes,
+        path: savedPath,
+        uri: sealedFile.uri,
+        displayPath: sealedFile.displayPath,
+        mime: sealedFile.mime,
+        sizeBytes: sealedFile.bytes,
+      );
+      await db.addSealedEnvelope(record);
+      completed = true;
+      return _AndroidSealResult(
+        label: '密封群组文件',
+        path: savedPath,
+        record: record,
+        details: [
+          '群组文件已密封为逐成员流式信封。',
+          'group: ${group.displayName} / ${group.groupId}',
+          'recipients: ${recipients.length}',
+          'file: $fileName',
+          'payload: ${_formatByteCount(scan.totalSize)}',
+          'chunks: $chunkCount',
+          'envelopes: $envelopeCount',
+          '信封: ${record.envelopeId}',
+          'bytes: $writtenBytes',
+          savedPath,
+        ].join('\n'),
+      );
+    } finally {
+      if (!digestClosed) {
+        try {
+          digestInput.close();
+        } catch (_) {
+          // Best-effort hash cleanup; the real failure is reported above.
+        }
+      }
+      if (!completed) {
+        await _secureStore.deleteSavedFile(
+          uri: output.uri,
+          path: output.displayPath,
         );
       }
     }
@@ -7877,22 +9182,33 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
 
   Future<_AndroidEnvelopeImportResult> _importAndroidOpaqueEnvelopeBase64(
     String envelopeBase64, {
+    AndroidContactRecord? targetSenderContact,
     bool updateDetails = true,
   }) async {
     final envelopeBytes = _decodeOpaqueEnvelopeBase64(envelopeBase64);
     return _importAndroidOpaqueEnvelopeBytes(
       envelopeBytes,
       envelopeBase64: envelopeBase64.trim(),
+      targetSenderContact: targetSenderContact,
       updateDetails: updateDetails,
     );
   }
 
-  Future<void>
-  _importAndroidOfflineEnvelopeFromFile() => _run('从文件导入离线信封', () async {
-    final envelopeFile = await _secureStore.pickOfflineEnvelopeFile();
-    if (envelopeFile == null) {
-      throw const SecureStoreException('未选择离线信封文件。');
-    }
+  Future<void> _importAndroidOfflineEnvelopeFromFile() =>
+      _run('从文件导入离线信封', () async {
+        final envelopeFile = await _secureStore.pickOfflineEnvelopeFile();
+        if (envelopeFile == null) {
+          throw const SecureStoreException('未选择离线信封文件。');
+        }
+        await _importAndroidOfflineEnvelopeFileCore(envelopeFile);
+      });
+
+  Future<void> _importAndroidOfflineEnvelopeFile(AndroidPickedFile file) =>
+      _run('打开离线信封', () => _importAndroidOfflineEnvelopeFileCore(file));
+
+  Future<void> _importAndroidOfflineEnvelopeFileCore(
+    AndroidPickedFile envelopeFile,
+  ) async {
     final fileSize = envelopeFile.sizeBytes;
     debugPrint(
       'Envelope offline import picked file: '
@@ -7985,7 +9301,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       envelopeBytes,
       writeDuplicateFile: true,
     );
-  });
+  }
 
   Future<bool> _isAndroidOfflineStreamEnvelopeFile(
     AndroidPickedFile file,
@@ -8167,6 +9483,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         envelopeId: currentManifestPayload.payload.envelopeId,
         conversationId: currentManifestPayload.payload.conversationId,
         direction: 'incoming',
+        isRead: false,
         peerKeyId: currentSenderContact.keyId,
         peerDisplayName: _contactTitle(currentSenderContact),
         createdAtUnixMs: receivedAtUnixMs,
@@ -8183,6 +9500,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       final inserted = await db.addMessage(
         message,
         recipientIdentityKeyId: _requireAndroidIdentity().keyId,
+        createRelayResult: true,
       );
       final savedMessage = inserted
           ? message
@@ -8395,6 +9713,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
               groupConversationId ??
               currentManifestPayload.payload.conversationId,
           direction: 'incoming',
+          isRead: false,
           peerKeyId: currentSenderContact.keyId,
           peerDisplayName: _contactTitle(currentSenderContact),
           createdAtUnixMs: receivedAtUnixMs,
@@ -8411,6 +9730,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         final inserted = await db.addMessage(
           message,
           recipientIdentityKeyId: _requireAndroidIdentity().keyId,
+          createRelayResult: true,
         );
         final savedMessage = inserted
             ? message
@@ -8495,7 +9815,20 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       for (var index = 0; index < chunk.length; index += 1) {
         if (chunk[index] != 0x0a) continue;
         if (index > start) {
+          if (lineBuilder.length + index - start >
+              _androidMaximumOfflineEnvelopeLineCharacters) {
+            throw SecureStoreException(
+              '离线信封单行超过 '
+              '$_androidMaximumOfflineEnvelopeLineCharacters 字符资源上限。',
+            );
+          }
           lineBuilder.add(chunk.sublist(start, index));
+        }
+        if (lineIndex > _androidMaximumOfflineGroupEnvelopeLines) {
+          throw SecureStoreException(
+            '离线信封密文行超过 '
+            '$_androidMaximumOfflineGroupEnvelopeLines 条资源上限。',
+          );
         }
         final lineBytes = lineBuilder.takeBytes();
         var line = ascii.decode(lineBytes, allowInvalid: true);
@@ -8508,6 +9841,13 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         start = index + 1;
       }
       if (start < chunk.length) {
+        if (lineBuilder.length + chunk.length - start >
+            _androidMaximumOfflineEnvelopeLineCharacters) {
+          throw SecureStoreException(
+            '离线信封单行超过 '
+            '$_androidMaximumOfflineEnvelopeLineCharacters 字符资源上限。',
+          );
+        }
         lineBuilder.add(chunk.sublist(start));
       }
       if (chunk.length < requestedLength) {
@@ -8516,6 +9856,12 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     }
     final trailing = lineBuilder.takeBytes();
     if (trailing.isNotEmpty) {
+      if (lineIndex > _androidMaximumOfflineGroupEnvelopeLines) {
+        throw SecureStoreException(
+          '离线信封密文行超过 '
+          '$_androidMaximumOfflineGroupEnvelopeLines 条资源上限。',
+        );
+      }
       var line = ascii.decode(trailing, allowInvalid: true);
       if (line.endsWith('\r')) {
         line = line.substring(0, line.length - 1);
@@ -8531,7 +9877,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     final identity = _requireAndroidIdentity();
     final normalizedBase64 = envelopeBase64.trim();
     if (normalizedBase64.isEmpty) {
-      throw const SecureStoreException('离线信封为空。');
+      throw const AndroidInvalidEnvelopePayloadException('离线信封为空。');
     }
     NativeInboundOpaquePayload? inbound;
     AndroidContactRecord? contact;
@@ -8548,17 +9894,18 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         );
         contact = candidate;
         break;
-      } catch (error) {
+      } on EnvelopeNativeException catch (error) {
         lastError = error;
       }
     }
     if (inbound == null || contact == null) {
-      throw SecureStoreException(
+      throw AndroidEnvelopeCiphertextRejectedException(
         _opaqueEnvelopeDecryptFailureMessage(
           candidates: candidates,
           targetSenderContact: targetSenderContact,
           lastError: lastError,
         ),
+        lastError,
       );
     }
     return _AndroidDecryptedOpaquePayload(
@@ -8577,7 +9924,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
   }) async {
     final identity = _requireAndroidIdentity();
     if (envelopeBytes.isEmpty) {
-      throw const SecureStoreException('离线信封为空。');
+      throw const AndroidInvalidEnvelopePayloadException('离线信封为空。');
     }
     final normalizedBase64 =
         envelopeBase64?.trim() ?? _encodeOpaqueEnvelopeBase64(envelopeBytes);
@@ -8596,21 +9943,54 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         );
         contact = candidate;
         break;
-      } catch (error) {
+      } on EnvelopeNativeException catch (error) {
         lastError = error;
       }
     }
     if (inbound == null || contact == null) {
-      throw SecureStoreException(
+      throw AndroidEnvelopeCiphertextRejectedException(
         _opaqueEnvelopeDecryptFailureMessage(
           candidates: candidates,
           targetSenderContact: targetSenderContact,
           lastError: lastError,
         ),
+        lastError,
       );
     }
     final decrypted = inbound;
     final senderContact = contact;
+    final receiptDb = await _ensureAndroidDbStore();
+    final priorResult = await receiptDb.relayHa.incomingResult(
+      senderKeyId: senderContact.keyId,
+      recipientKeyId: identity.keyId,
+      envelopeId: decrypted.envelopeId,
+    );
+    if (priorResult != null) {
+      if (priorResult['envelope_sha256'] != _sha256Base64Url(envelopeBytes)) {
+        throw const AndroidInvalidEnvelopePayloadException('同一信封 ID 的密文不一致。');
+      }
+      if (priorResult['outcome'] == 'delivered' ||
+          priorResult['outcome'] == 'rejected') {
+        final stored = await receiptDb.getMessage(decrypted.envelopeId);
+        return _AndroidEnvelopeImportResult(
+          message:
+              stored ??
+              AndroidMessageRecord(
+                envelopeId: decrypted.envelopeId,
+                conversationId: decrypted.conversationId,
+                direction: 'incoming',
+                peerKeyId: senderContact.keyId,
+                peerDisplayName: _contactTitle(senderContact),
+                createdAtUnixMs: DateTime.now().millisecondsSinceEpoch,
+                messageCounter: decrypted.messageCounter,
+                text: '此前已处理的信封。',
+                opaqueEnvelopeBase64: normalizedBase64,
+              ),
+          duplicate: true,
+          receiptEnvelopeId: decrypted.envelopeId,
+        );
+      }
+    }
     if (decrypted.mime == _androidGroupControlMime) {
       return _importAndroidGroupControlPayload(
         decrypted,
@@ -8629,11 +10009,26 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     }
     if (decrypted.mime == _androidFileChunkMime ||
         decrypted.mime == _androidFileManifestMime) {
-      return _importAndroidFileTransferPayload(
+      final result = await _importAndroidFileTransferPayload(
         decrypted,
         senderContact,
         normalizedBase64,
         updateDetails: updateDetails,
+      );
+      final db = await _ensureAndroidDbStore();
+      final payload = _decodeAndroidFileTransferPayload(decrypted);
+      await db.relayHa.recordFilePart(
+        senderKeyId: senderContact.keyId,
+        recipientKeyId: identity.keyId,
+        envelopeId: decrypted.envelopeId,
+        envelopeBase64: normalizedBase64,
+        transferId: payload['transfer_id'] as String,
+        receivedAt: DateTime.now().millisecondsSinceEpoch,
+      );
+      return _AndroidEnvelopeImportResult(
+        message: result.message,
+        duplicate: result.duplicate,
+        receiptEnvelopeId: decrypted.envelopeId,
       );
     }
     final db = await _ensureAndroidDbStore();
@@ -8661,6 +10056,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       envelopeId: decrypted.envelopeId,
       conversationId: decrypted.conversationId,
       direction: 'incoming',
+      isRead: false,
       peerKeyId: senderContact.keyId,
       peerDisplayName: _contactTitle(senderContact),
       createdAtUnixMs: receivedAtUnixMs,
@@ -8674,6 +10070,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     final inserted = await db.addMessage(
       message,
       recipientIdentityKeyId: _requireAndroidIdentity().keyId,
+      createRelayResult: true,
     );
     final savedMessage = inserted
         ? message
@@ -8745,7 +10142,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         updateDetails: updateDetails,
       );
     }
-    throw SecureStoreException('未知文件分片载荷：$kind');
+    throw AndroidInvalidEnvelopePayloadException('未知文件分片载荷：$kind');
   }
 
   Future<_AndroidEnvelopeImportResult> _importAndroidContactControlPayload(
@@ -8756,31 +10153,34 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
   }) async {
     final decoded = jsonDecode(utf8.decode(payload.payloadBytes));
     if (decoded is! Map) {
-      throw const SecureStoreException('联系人控制载荷不是 JSON object。');
+      throw const AndroidInvalidEnvelopePayloadException(
+        '联系人控制载荷不是 JSON object。',
+      );
     }
     final map = decoded.cast<String, Object?>();
-    if ((map['version'] as num?)?.toInt() != 1) {
-      throw const SecureStoreException('不支持的联系人控制载荷版本。');
+    if (map['version'] != 1) {
+      throw const AndroidInvalidEnvelopePayloadException('不支持的联系人控制载荷版本。');
     }
     final type = map['type']?.toString() ?? '';
     if (type != 'contact_deleted') {
-      throw SecureStoreException('未知联系人控制事件：$type');
+      throw AndroidInvalidEnvelopePayloadException('未知联系人控制事件：$type');
     }
     final actorKeyId = map['actor_key_id']?.toString() ?? '';
     if (actorKeyId.isEmpty || actorKeyId != senderContact.keyId) {
-      throw SecureStoreException(
+      throw AndroidInvalidEnvelopePayloadException(
         '联系人控制载荷 actor 与发送方不一致：$actorKeyId / ${senderContact.keyId}',
       );
     }
     final selfKeyId = _requireAndroidIdentity().keyId;
     final targetKeyId = map['target_key_id']?.toString() ?? '';
     if (targetKeyId != selfKeyId) {
-      throw SecureStoreException('联系人控制载荷目标不是本机身份：$targetKeyId / $selfKeyId');
+      throw AndroidInvalidEnvelopePayloadException(
+        '联系人控制载荷目标不是本机身份：$targetKeyId / $selfKeyId',
+      );
     }
 
     final db = await _ensureAndroidDbStore();
     final deleted = await db.deleteContact(senderContact.keyId);
-    _seenIncomingMessageCounts.remove(senderContact.keyId);
     _androidIncomingMessageCounts = {
       for (final entry in _androidIncomingMessageCounts.entries)
         if (entry.key != senderContact.keyId) entry.key: entry.value,
@@ -8796,6 +10196,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       envelopeId: payload.envelopeId,
       conversationId: senderContact.keyId,
       direction: 'incoming',
+      isRead: false,
       peerKeyId: senderContact.keyId,
       peerDisplayName: _contactTitle(senderContact),
       createdAtUnixMs: DateTime.now().millisecondsSinceEpoch,
@@ -8824,46 +10225,83 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     String normalizedEnvelopeBase64, {
     bool updateDetails = true,
   }) async {
+    final db = await _ensureAndroidDbStore();
+    final existingMessage = await db.getMessage(payload.envelopeId);
+    if (existingMessage != null) {
+      return _AndroidEnvelopeImportResult(
+        message: existingMessage,
+        duplicate: true,
+      );
+    }
     final decoded = jsonDecode(utf8.decode(payload.payloadBytes));
     if (decoded is! Map) {
-      throw const SecureStoreException('群组控制载荷不是 JSON object。');
+      throw const AndroidInvalidEnvelopePayloadException(
+        '群组控制载荷不是 JSON object。',
+      );
     }
     final map = decoded.cast<String, Object?>();
-    if ((map['version'] as num?)?.toInt() != 1) {
-      throw const SecureStoreException('不支持的群组控制载荷版本。');
+    if (map['version'] != 1) {
+      throw const AndroidInvalidEnvelopePayloadException('不支持的群组控制载荷版本。');
     }
     final actorKeyId = map['actor_key_id']?.toString() ?? '';
     if (actorKeyId.isEmpty || actorKeyId != senderContact.keyId) {
-      throw SecureStoreException(
+      throw AndroidInvalidEnvelopePayloadException(
         '群组控制载荷 actor 与发送方不一致：$actorKeyId / ${senderContact.keyId}',
       );
     }
     _validateAndroidGroupControlSignature(map, senderContact);
-    final groupValue = map['group'];
-    if (groupValue is! Map) {
-      throw const SecureStoreException('群组控制载荷缺少 group。');
-    }
-    final group = AndroidGroupRecord.fromJson(groupValue);
-    final membersValue = map['members'];
-    if (membersValue is! List) {
-      throw const SecureStoreException('群组控制载荷缺少 members。');
-    }
-    final incomingMembers = membersValue
-        .whereType<Map>()
-        .map(AndroidGroupMemberRecord.fromJson)
-        .where((member) => member.groupId == group.groupId)
-        .toList(growable: false);
-    if (incomingMembers.isEmpty) {
-      throw const SecureStoreException('群组控制载荷没有有效成员。');
-    }
+    final incomingState = decodeAndroidGroupControlState(map);
+    final group = incomingState.group;
+    final incomingMembers = incomingState.members;
     final type = map['type']?.toString() ?? '';
-    final db = await _ensureAndroidDbStore();
+    if (!_androidSupportedPortableGroupEventTypes.contains(type)) {
+      throw AndroidInvalidEnvelopePayloadException('未知群组控制事件：$type');
+    }
     final existingGroup = await db.getGroup(group.groupId);
-    final storedGroup = _newerAndroidGroupRecord(existingGroup, group);
     final existingMembers = await db.getGroupMembers(groupId: group.groupId);
+    if (androidGroupEpochNeedsCausalDeferral(
+      eventType: type,
+      incomingEpoch: group.epoch,
+      currentEpoch: existingGroup?.epoch,
+    )) {
+      final expectedEpoch = existingGroup == null
+          ? 1
+          : type == 'group_message'
+          ? existingGroup.epoch
+          : existingGroup.epoch + 1;
+      throw AndroidMailboxMissingPrerequisiteException(
+        '群组事件 epoch 必须为 $expectedEpoch，实际为 ${group.epoch}。',
+      );
+    }
+    if (existingGroup == null &&
+        (type != 'group_invite' ||
+            senderContact.keyId != group.ownerKeyId ||
+            group.epoch != 1 ||
+            !group.isActive ||
+            incomingMembers.where((member) => member.isOwner).length != 1 ||
+            !incomingMembers.any(
+              (member) =>
+                  member.keyId == group.ownerKeyId &&
+                  member.isOwner &&
+                  member.isActive,
+            ))) {
+      throw const AndroidInvalidEnvelopePayloadException(
+        '只有活跃群主发送的 group_invite 才能创建本地群组。',
+      );
+    }
+    if (existingGroup != null &&
+        type != 'group_message' &&
+        !existingMembers.any((member) => member.keyId == senderContact.keyId)) {
+      throw const AndroidMailboxMissingPrerequisiteException('群组事件发送方不是已知群成员。');
+    }
+    final storedGroup = type == 'group_message' && existingGroup != null
+        ? existingGroup
+        : _newerAndroidGroupRecord(existingGroup, group);
     final staleEvent =
         existingGroup != null && group.epoch < existingGroup.epoch;
-    var mergedMembers = staleEvent
+    var mergedMembers = type == 'group_message'
+        ? existingMembers
+        : staleEvent
         ? existingMembers
         : _mergeIncomingAndroidGroupMembers(
             type: type,
@@ -8877,12 +10315,33 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         members: mergedMembers,
       );
     }
-    await db.upsertGroup(storedGroup);
-    await db.upsertGroupMembers(mergedMembers);
-    await db.addGroupEvent(_groupEventFromPayload(group, map));
-    mergedMembers = await _applyAndroidConsensusAdmissions(
+    if (type == 'group_message') {
+      final selfKeyId = _requireAndroidIdentity().keyId;
+      final self = mergedMembers
+          .where((member) => member.keyId == selfKeyId)
+          .toList(growable: false);
+      if (self.isEmpty || !self.first.isActive) {
+        throw const AndroidInvalidEnvelopePayloadException(
+          '本机身份不是该群活跃成员，拒绝导入群消息。',
+        );
+      }
+      final senderMember = mergedMembers
+          .where((member) => member.keyId == senderContact.keyId)
+          .toList(growable: false);
+      if (senderMember.isEmpty || !senderMember.first.isActive) {
+        throw const AndroidInvalidEnvelopePayloadException(
+          '发送方不是该群活跃成员，拒绝导入群消息。',
+        );
+      }
+    }
+    final groupEvent = _groupEventFromPayload(group, map);
+    mergedMembers = _calculateAndroidConsensusAdmissions(
       group: storedGroup,
       members: mergedMembers,
+      events: [
+        ...await db.getGroupEvents(groupId: group.groupId),
+        groupEvent,
+      ],
     );
     final membershipLossEvent =
         type == 'member_left' || type == 'member_removed';
@@ -8890,26 +10349,11 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         membershipLossEvent &&
         (!storedGroup.isActive ||
             androidGroupShouldAutoDissolveForMembers(mergedMembers));
-    await _deactivateAndroidGroupIfMembershipLossLeavesTooFewMembers(
-      eventType: type,
-      groupId: group.groupId,
-      members: mergedMembers,
-    );
+    final committedGroup = groupDissolvedByEvent
+        ? storedGroup.copyWith(isActive: false)
+        : storedGroup;
 
     if (type == 'group_message') {
-      final selfKeyId = _requireAndroidIdentity().keyId;
-      final self = mergedMembers
-          .where((member) => member.keyId == selfKeyId)
-          .toList(growable: false);
-      if (self.isEmpty || !self.first.isActive) {
-        throw const SecureStoreException('本机身份不是该群活跃成员，拒绝导入群消息。');
-      }
-      final senderMember = mergedMembers
-          .where((member) => member.keyId == senderContact.keyId)
-          .toList(growable: false);
-      if (senderMember.isEmpty || !senderMember.first.isActive) {
-        throw const SecureStoreException('发送方不是该群活跃成员，拒绝导入群消息。');
-      }
       final existing = await db.getMessage(payload.envelopeId);
       if (existing != null) {
         await _refreshAndroidChatStore();
@@ -8921,6 +10365,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         envelopeId: payload.envelopeId,
         conversationId: storedGroup.groupId,
         direction: 'incoming',
+        isRead: false,
         peerKeyId: senderContact.keyId,
         peerDisplayName: _contactTitle(senderContact),
         createdAtUnixMs: receivedAtUnixMs,
@@ -8928,9 +10373,13 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         text: text,
         opaqueEnvelopeBase64: normalizedEnvelopeBase64,
       );
-      final inserted = await db.addMessage(
-        message,
+      final inserted = await db.importGroupControlTransition(
+        group: committedGroup,
+        members: mergedMembers,
+        event: groupEvent,
+        message: message,
         recipientIdentityKeyId: _requireAndroidIdentity().keyId,
+        createRelayResult: true,
       );
       final savedMessage = inserted
           ? message
@@ -8982,6 +10431,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
           ? senderContact.keyId
           : storedGroup.groupId,
       direction: 'incoming',
+      isRead: false,
       peerKeyId: senderContact.keyId,
       peerDisplayName: _contactTitle(senderContact),
       createdAtUnixMs: DateTime.now().millisecondsSinceEpoch,
@@ -8993,9 +10443,13 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         groupId: storedGroup.groupId,
       ),
     );
-    final inserted = await db.addMessage(
-      eventMessage,
+    final inserted = await db.importGroupControlTransition(
+      group: committedGroup,
+      members: mergedMembers,
+      event: groupEvent,
+      message: eventMessage,
       recipientIdentityKeyId: _requireAndroidIdentity().keyId,
+      createRelayResult: true,
     );
     final savedEventMessage = inserted
         ? eventMessage
@@ -9082,11 +10536,13 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
   ) {
     final decoded = jsonDecode(utf8.decode(payload.payloadBytes));
     if (decoded is! Map) {
-      throw const SecureStoreException('文件分片载荷不是 JSON object。');
+      throw const AndroidInvalidEnvelopePayloadException(
+        '文件分片载荷不是 JSON object。',
+      );
     }
     final map = decoded.cast<String, Object?>();
     if ((map['version'] as num?)?.toInt() != 1) {
-      throw const SecureStoreException('不支持的文件分片版本。');
+      throw const AndroidInvalidEnvelopePayloadException('不支持的文件分片版本。');
     }
     return map;
   }
@@ -9106,12 +10562,14 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     );
     final dataBase64 = _requiredAndroidTransferString(chunkJson, 'data_b64');
     if (chunkIndex < 0 || chunkIndex >= chunkCount) {
-      throw SecureStoreException('文件分片序号无效：$chunkIndex / $chunkCount');
+      throw AndroidInvalidEnvelopePayloadException(
+        '文件分片序号无效：$chunkIndex / $chunkCount',
+      );
     }
     final chunkBytes = base64Url.decode(base64Url.normalize(dataBase64));
     final actualSha256 = _sha256Base64Url(chunkBytes);
     if (actualSha256 != chunkSha256) {
-      throw const SecureStoreException('文件分片 SHA-256 校验失败。');
+      throw const AndroidInvalidEnvelopePayloadException('文件分片 SHA-256 校验失败。');
     }
 
     final db = await _ensureAndroidDbStore();
@@ -9211,7 +10669,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
   }) {
     final kind = manifestJson['kind']?.toString() ?? '';
     if (kind != expectedKind) {
-      throw SecureStoreException('文件 manifest 类型无效：$kind');
+      throw AndroidInvalidEnvelopePayloadException('文件 manifest 类型无效：$kind');
     }
     final transferId = _requiredAndroidTransferString(
       manifestJson,
@@ -9228,13 +10686,15 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     );
     final chunkHashesValue = manifestJson['chunk_sha256'];
     if (chunkHashesValue is! List) {
-      throw const SecureStoreException('文件 manifest 缺少 chunk_sha256。');
+      throw const AndroidInvalidEnvelopePayloadException(
+        '文件 manifest 缺少 chunk_sha256。',
+      );
     }
     final chunkHashes = chunkHashesValue
         .map((item) => item.toString())
         .toList();
     if (totalSize < 0 || (maxBytes != null && totalSize > maxBytes)) {
-      throw SecureStoreException(
+      throw AndroidInvalidEnvelopePayloadException(
         maxBytes == null
             ? '文件大小无效：${_formatByteCount(totalSize)}'
             : '在线文件大小超出上限：${_formatByteCount(totalSize)} > '
@@ -9242,10 +10702,12 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       );
     }
     if (chunkSize <= 0 || chunkSize > maxChunkSize) {
-      throw SecureStoreException('文件 chunk_size 无效：$chunkSize');
+      throw AndroidInvalidEnvelopePayloadException(
+        '文件 chunk_size 无效：$chunkSize',
+      );
     }
     if (chunkCount <= 0 || chunkHashes.length != chunkCount) {
-      throw SecureStoreException(
+      throw AndroidInvalidEnvelopePayloadException(
         '文件 chunk_count 无效：$chunkCount / ${chunkHashes.length}',
       );
     }
@@ -9294,18 +10756,20 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       final bytes = base64Url.decode(base64Url.normalize(dataBase64));
       final expectedHash = manifest.chunkSha256[index];
       if (_sha256Base64Url(bytes) != expectedHash) {
-        throw SecureStoreException('文件分片 $index SHA-256 校验失败。');
+        throw AndroidInvalidEnvelopePayloadException(
+          '文件分片 $index SHA-256 校验失败。',
+        );
       }
       builder.add(bytes);
     }
     final fileBytes = builder.takeBytes();
     if (fileBytes.length != manifest.totalSize) {
-      throw SecureStoreException(
+      throw AndroidInvalidEnvelopePayloadException(
         '文件大小校验失败：${fileBytes.length} != ${manifest.totalSize}',
       );
     }
     if (_sha256Base64Url(fileBytes) != manifest.fileSha256) {
-      throw const SecureStoreException('文件整体 SHA-256 校验失败。');
+      throw const AndroidInvalidEnvelopePayloadException('文件整体 SHA-256 校验失败。');
     }
 
     final messageEnvelopeId =
@@ -9337,6 +10801,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       envelopeId: messageEnvelopeId,
       conversationId: conversationId,
       direction: 'incoming',
+      isRead: false,
       peerKeyId: senderContact.keyId,
       peerDisplayName: _contactTitle(senderContact),
       createdAtUnixMs: receivedAtUnixMs,
@@ -9353,6 +10818,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     final inserted = await db.addMessage(
       message,
       recipientIdentityKeyId: _requireAndroidIdentity().keyId,
+      createRelayResult: true,
     );
     final savedMessage = inserted
         ? message
@@ -9388,6 +10854,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       envelopeId: payload.envelopeId,
       conversationId: payload.conversationId,
       direction: 'incoming',
+      isRead: false,
       peerKeyId: senderContact.keyId,
       peerDisplayName: _contactTitle(senderContact),
       createdAtUnixMs: DateTime.now().millisecondsSinceEpoch,
@@ -9412,7 +10879,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     }
     final group = await db.getGroup(groupId);
     if (group == null || !group.isActive) {
-      throw SecureStoreException('群文件所属群组不可用：$groupId');
+      throw AndroidMailboxMissingPrerequisiteException('群文件所属群组不可用：$groupId');
     }
     final identity = _requireAndroidIdentity();
     final members = await db.getGroupMembers(groupId: groupId);
@@ -9423,14 +10890,20 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
       if (member.keyId == senderContact.keyId) sender = member;
     }
     if (self == null || !self.isActive) {
-      throw const SecureStoreException('本机身份不是该群活跃成员，拒绝导入群文件。');
+      throw const AndroidInvalidEnvelopePayloadException(
+        '本机身份不是该群活跃成员，拒绝导入群文件。',
+      );
     }
     if (sender == null || !sender.isActive) {
-      throw const SecureStoreException('发送方不是该群活跃成员，拒绝导入群文件。');
+      throw const AndroidInvalidEnvelopePayloadException(
+        '发送方不是该群活跃成员，拒绝导入群文件。',
+      );
     }
     if (group.policy == AndroidGroupPolicy.verified &&
         !sender.isLocallyTrusted) {
-      throw const SecureStoreException('发送方尚未通过本机 fingerprint 验证，拒绝导入群文件。');
+      throw const AndroidInvalidEnvelopePayloadException(
+        '发送方尚未通过本机 fingerprint 验证，拒绝导入群文件。',
+      );
     }
     return groupId;
   }
@@ -9454,7 +10927,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
   ) {
     final text = value[field]?.toString() ?? '';
     if (text.trim().isEmpty) {
-      throw SecureStoreException('文件分片载荷缺少 $field。');
+      throw AndroidInvalidEnvelopePayloadException('文件分片载荷缺少 $field。');
     }
     return text;
   }
@@ -9464,7 +10937,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     if (raw is num) return raw.toInt();
     final parsed = int.tryParse(raw?.toString() ?? '');
     if (parsed == null) {
-      throw SecureStoreException('文件分片载荷缺少 $field。');
+      throw AndroidInvalidEnvelopePayloadException('文件分片载荷缺少 $field。');
     }
     return parsed;
   }
@@ -9679,8 +11152,6 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
         _selectedAndroidGroupId = null;
         _androidMessageSelectionMode = false;
         _selectedAndroidMessageIds.clear();
-        _seenIncomingMessageCounts.clear();
-        _seenIncomingConversationCounts.clear();
         _details = 'ADB debug: identity created for ${record.label}';
       });
     }
@@ -11322,7 +12793,10 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     final group = _selectedAndroidGroup;
     final visibleMessages = _androidMessagesForSelectedConversation();
     final canSealEnvelope =
-        _secureIdentityReady && _native != null && contact != null && !_busy;
+        _secureIdentityReady &&
+        _native != null &&
+        (contact != null || group != null) &&
+        !_busy;
     if (_androidMessageSelectionMode) {
       final selectedCount = _selectedAndroidMessageIds.length;
       return Container(
@@ -11442,7 +12916,7 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
             ),
-          if (contact != null) ...[
+          if (contact != null || group != null) ...[
             IconButton.filledTonal(
               tooltip: l10n.seal,
               onPressed: canSealEnvelope
@@ -12041,8 +13515,8 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
   }
 
   Future<void> _openAndroidSealPage(BuildContext context) async {
-    if (_selectedAndroidContact == null) {
-      _showRunErrorSnackBar('请先选择一位联系人再使用密封。');
+    if (_selectedAndroidContact == null && _selectedAndroidGroup == null) {
+      _showRunErrorSnackBar('请先选择联系人或群组再使用密封。');
       return;
     }
     final controller = TextEditingController(
@@ -12125,10 +13599,11 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
     return StatefulBuilder(
       builder: (pageContext, setPageState) {
         final contact = _selectedAndroidContact;
+        final group = _selectedAndroidGroup;
         final canSeal =
             _secureIdentityReady &&
             _native != null &&
-            contact != null &&
+            (contact != null || (group != null && group.isActive)) &&
             !_busy &&
             !pageBusy;
         final canSealText = canSeal && textController.text.trim().isNotEmpty;
@@ -12156,7 +13631,15 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
               children: [
                 _CommandGroup(
                   title: '收件人',
-                  children: [_AndroidSealRecipientCard(contact: contact)],
+                  children: [
+                    _AndroidSealRecipientCard(
+                      contact: contact,
+                      group: group,
+                      groupIcon: group == null
+                          ? null
+                          : _androidGroupPolicyIcon(group.policy),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 18),
                 _CommandGroup(
@@ -12181,11 +13664,16 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
                       enabled: canSealText,
                       onPressed: () => unawaited(
                         runSeal(
-                          '密封文本',
-                          () => _createAndroidTextSealResult(
-                            contact!,
-                            textController.text,
-                          ),
+                          group == null ? '密封文本' : '密封群组文本',
+                          () => group == null
+                              ? _createAndroidTextSealResult(
+                                  contact!,
+                                  textController.text,
+                                )
+                              : _createAndroidGroupTextSealResult(
+                                  group,
+                                  textController.text,
+                                ),
                           setPageState,
                         ),
                       ),
@@ -12202,8 +13690,10 @@ class _EnvelopeHomePageState extends State<EnvelopeHomePage>
                       enabled: canSeal,
                       onPressed: () => unawaited(
                         runSeal(
-                          '密封文件',
-                          () => _createAndroidFileSealResult(contact!),
+                          group == null ? '密封文件' : '密封群组文件',
+                          () => group == null
+                              ? _createAndroidFileSealResult(contact!)
+                              : _createAndroidGroupFileSealResult(group),
                           setPageState,
                         ),
                       ),
@@ -13010,13 +14500,27 @@ class _SettingsInfoRow extends StatelessWidget {
 }
 
 class _AndroidSealRecipientCard extends StatelessWidget {
-  const _AndroidSealRecipientCard({required this.contact});
+  const _AndroidSealRecipientCard({
+    required this.contact,
+    required this.group,
+    required this.groupIcon,
+  });
 
   final AndroidContactRecord? contact;
+  final AndroidGroupRecord? group;
+  final IconData? groupIcon;
 
   @override
   Widget build(BuildContext context) {
     final current = contact;
+    final currentGroup = group;
+    final hasTarget = current != null || currentGroup != null;
+    final label = currentGroup != null
+        ? currentGroup.displayName
+        : current?.displayLabel ?? '未选择收件人';
+    final subtitle = currentGroup != null
+        ? '${currentGroup.groupId} / 逐成员加密'
+        : current?.keyId ?? '请先从联系人或群组进入聊天。';
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
@@ -13027,7 +14531,14 @@ class _AndroidSealRecipientCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          current == null
+          currentGroup != null
+              ? _AndroidGroupAvatar(
+                  label: currentGroup.displayName,
+                  seed: currentGroup.displaySeed,
+                  size: 42,
+                  icon: groupIcon ?? Icons.groups_outlined,
+                )
+              : current == null
               ? const _AndroidAvatar(
                   label: '?',
                   seed: 'seal-empty-contact',
@@ -13045,7 +14556,7 @@ class _AndroidSealRecipientCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  current == null ? '未选择联系人' : current.displayLabel,
+                  label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -13055,7 +14566,7 @@ class _AndroidSealRecipientCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  current == null ? '请先从联系人进入聊天。' : current.keyId,
+                  subtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -13063,6 +14574,18 @@ class _AndroidSealRecipientCard extends StatelessWidget {
                     color: Color(0xff65716d),
                   ),
                 ),
+                if (currentGroup != null) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    '仅当前策略允许的活跃成员可拆封。',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: hasTarget
+                          ? const Color(0xff315c44)
+                          : const Color(0xff65716d),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -14954,6 +16477,9 @@ class _AndroidMessageTile extends StatelessWidget {
       AndroidDeliveryStatus.created => '发送中',
       AndroidDeliveryStatus.pending => '待重试',
       AndroidDeliveryStatus.sent => '已送达',
+      AndroidDeliveryStatus.legacySent => '历史发送状态（未验证）',
+      AndroidDeliveryStatus.rejected => '接收方已拒绝',
+      AndroidDeliveryStatus.expired => '已过期',
       AndroidDeliveryStatus.serverMailbox => '等待接收',
       _ => '已发送',
     };
@@ -16124,10 +17650,12 @@ class _AndroidEnvelopeImportResult {
   const _AndroidEnvelopeImportResult({
     required this.message,
     required this.duplicate,
+    this.receiptEnvelopeId,
   });
 
   final AndroidMessageRecord message;
   final bool duplicate;
+  final String? receiptEnvelopeId;
 }
 
 class _AndroidDecryptedOpaquePayload {

@@ -39,7 +39,7 @@ public sealed class LocalizationService : ILocalizationService
         var dictionaries = Application.Current.Resources.MergedDictionaries;
         var replacement = new ResourceDictionary
         {
-            Source = new Uri($"Resources/Strings.{normalized}.xaml", UriKind.Relative),
+            Source = new Uri($"/Envelope.Windows;component/Resources/Strings.{normalized}.xaml", UriKind.Relative),
         };
 
         var index = FindDictionaryIndex(dictionaries, DictionaryMarker);

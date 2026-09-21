@@ -67,7 +67,7 @@
       overflow: visible;
     }
 
-    .logo svg {
+    .logo img {
       display: block;
       width: 40px;
       height: 40px;
@@ -201,22 +201,15 @@
     <div class="wrap hero">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <svg viewBox="0 0 40 40" role="img" focusable="false">
-            <rect x="0" y="0" width="40" height="40" rx="9" fill="#f97316" />
-            <path d="M9 13.5h22a2.5 2.5 0 0 1 2.5 2.5v13A2.5 2.5 0 0 1 31 31.5H9A2.5 2.5 0 0 1 6.5 29V16A2.5 2.5 0 0 1 9 13.5Z" fill="none" stroke="#fff" stroke-width="2.6" stroke-linejoin="round" />
-            <path d="M8.5 16.5 20 24.2l11.5-7.7" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
-            <circle cx="31.5" cy="31.5" r="8.2" fill="#1f3a5f" stroke="#fff" stroke-width="2.8" />
-            <path d="M28.5 30.6h6v4.7h-6z" fill="none" stroke="#fff" stroke-width="1.7" stroke-linejoin="round" />
-            <path d="M29.6 30.6v-1.3a1.9 1.9 0 0 1 3.8 0v1.3" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" />
-          </svg>
+          <img src="data:image/png;base64,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" alt="" width="40" height="40">
         </span>
         <span>Envelope Android</span>
       </div>
       <h1>使用手册 / User Manual</h1>
       <p class="lead">本手册对应当前 Android 客户端，说明如何安装 APK、创建身份、用恢复词和本地备份恢复使用现场、添加联系人、发送消息和文件、使用群组，以及通过密封 / 拆封文件完成离线转交。</p>
-      <p class="lead en">This manual applies to the current Android client. It covers APK installation, identity creation, recovery with a phrase and local backup, contacts, messages and files, groups, and offline transfer through sealing / opening envelope files.</p>
-      <p class="meta">适用版本：Envelope Android 当前版本。不同手机系统的安装确认和文件授权界面可能略有差异。</p>
-      <p class="meta">Version scope: current Envelope Android release. Installation confirmation and file permission screens may vary by Android device.</p>
+      <p class="lead en" lang="en">This manual applies to the current Android client. It covers APK installation, identity creation, recovery with a phrase and local backup, contacts, messages and files, groups, and offline transfer through sealing / opening envelope files.</p>
+      <p class="meta">适用版本：Envelope Android 1.0.1 · 复核日期：2026-09-21。完整构建号见“关于”；不同手机的安装与授权界面可能略有差异。</p>
+      <p class="meta">Applies to Envelope Android 1.0.1 · Reviewed 2026-09-21. See About for the full build identifier. Installation and permission screens may vary by device.</p>
     </div>
     <nav class="wrap" aria-label="目录 / Contents">
       <a href="#install">安装和升级 / Install</a>
@@ -235,199 +228,222 @@
     <section id="install">
       <h2>1. 安装和升级 / Installation and Updates</h2>
       <ol>
-        <li>获取正式 release APK。<span class="en">Get the official release APK.</span></li>
-        <li>在 Android 系统中允许本次安装来源。<span class="en">Allow this installation source in Android when prompted.</span></li>
-        <li>打开 APK 并完成安装。<span class="en">Open the APK and complete installation.</span></li>
-        <li>升级时直接安装新版 APK；已有身份、联系人、消息和设置会保留。<span class="en">To upgrade, install the newer APK directly. Existing identity, contacts, messages, and settings are preserved.</span></li>
+        <li>获取正式 release APK。<span class="en" lang="en">Get the official release APK.</span></li>
+        <li>在 Android 系统中允许本次安装来源。<span class="en" lang="en">Allow this installation source in Android when prompted.</span></li>
+        <li>打开 APK 并完成安装。<span class="en" lang="en">Open the APK and complete installation.</span></li>
+        <li>升级同包名、同签名的应用时可直接安装新版 APK；已有身份、联系人、消息和设置会保留。<span class="en" lang="en">To update an app with the same package ID and signature, install the newer APK directly. Existing identity, contacts, messages, and settings are preserved.</span></li>
       </ol>
-      <p>如果需要全新测试，先在系统设置中卸载 Envelope，再安装 APK。卸载会删除本机身份、联系人、消息、群组、密封历史和本地设置。</p>
-      <p class="en">For a clean test, uninstall Envelope from system settings before installing the APK. Uninstalling removes local identity, contacts, messages, groups, sealed history, and local settings.</p>
+      <p>当前 release APK 支持 ARM64、Android 7.0（API 24）及以上；包名为 <code>com.iamlouis.envelope</code>。旧包 <code>com.westwardsoft.envelope</code> 属于独立应用，数据不会自动迁移。卸载会清除本机私有数据；操作前请导出备份并确认恢复词可用。</p>
+      <p class="en" lang="en">The release APK supports ARM64 devices running Android 7.0 (API 24) or later. Its package ID is <code>com.iamlouis.envelope</code>. The older <code>com.westwardsoft.envelope</code> package is a separate app, and its data is not migrated automatically. Uninstalling clears private app data; export a backup and confirm you have the recovery phrase first.</p>
     </section>
 
     <section id="identity">
       <h2>2. 身份和本地备份 / Identity and Local Backup</h2>
+      <div class="notice">单活跃终端：一个身份当前只能选择一个活跃消息终端。迁移到 Windows 或另一台手机时，先备份并停止旧端收发，在新端恢复并核对 Key ID；这不是多端同时在线同步。<span class="en" lang="en">One active endpoint: an identity currently has one active messaging endpoint. Before moving to Windows or another phone, back up and stop messaging on the old endpoint, restore on the new one, and verify the Key ID. This is not simultaneous multi-device synchronization.</span></div>
+
       <div class="grid">
         <div class="card">
           <h3>创建身份 / Create Identity</h3>
           <ol>
-            <li>进入底部“设置”。<span class="en">Open the bottom Settings tab.</span></li>
-            <li>在“我的身份”里填写显示名。<span class="en">Enter a display name under My Identity.</span></li>
-            <li>点击“创建身份”。App 会生成本机身份，并把 BIP39 24 词恢复词短暂显示在恢复词输入框里。<span class="en">Tap Create Identity. The app creates the local identity and briefly shows the BIP39 24-word recovery phrase in the recovery phrase field.</span></li>
-            <li>立即离线抄写恢复词；恢复词会在超时、切到后台或执行相关操作后清空。<span class="en">Write the phrase down offline immediately. The phrase is cleared after a timeout, when the app goes to background, or after related operations.</span></li>
+            <li>进入底部“设置”。<span class="en" lang="en">Open the bottom Settings tab.</span></li>
+            <li>在“我的身份”里填写显示名。<span class="en" lang="en">Enter a display name under My Identity.</span></li>
+            <li>点击“创建身份”。App 会生成本机身份，并把 BIP39 24 词恢复词短暂显示在恢复词输入框里。<span class="en" lang="en">Tap Create Identity. The app creates the local identity and briefly shows the BIP39 24-word recovery phrase in the recovery phrase field.</span></li>
+            <li>立即离线抄写恢复词；恢复词会在超时、切到后台或执行相关操作后清空。<span class="en" lang="en">Write the phrase down offline immediately. The phrase is cleared after a timeout, when the app goes to background, or after related operations.</span></li>
           </ol>
         </div>
         <div class="card">
           <h3>恢复身份和使用现场 / Restore Identity and Local State</h3>
           <ol>
-            <li>在“我的身份”里的恢复词输入框输入原来的 24 词恢复词。<span class="en">Enter the original 24-word recovery phrase in the recovery phrase field under My Identity.</span></li>
-            <li>点击恢复词输入框下方的“用恢复词从本地备份恢复”。<span class="en">Tap Restore from phrase and local backup below the recovery phrase field.</span></li>
-            <li>选择本地备份文件。当前备份文件通常位于 <code>Download/Envelope/backups</code>。<span class="en">Choose the local backup file. Current backup files are usually under <code>Download/Envelope/backups</code>.</span></li>
-            <li>确认后，App 会用恢复词恢复身份私钥，再从备份中恢复联系人、群组、同步入口和自动备份策略。<span class="en">After confirmation, the app recovers the identity private keys from the phrase, then restores contacts, groups, sync entry, and auto-backup settings from the backup.</span></li>
+            <li>在“我的身份”里的恢复词输入框输入原来的 24 词恢复词。<span class="en" lang="en">Enter the original 24-word recovery phrase in the recovery phrase field under My Identity.</span></li>
+            <li>点击恢复词输入框下方的“用恢复词从本地备份恢复”。<span class="en" lang="en">Tap Restore from phrase and local backup below the recovery phrase field.</span></li>
+            <li>选择本地备份文件。当前备份文件通常位于 <code>Download/Envelope/backups</code>。<span class="en" lang="en">Choose the local backup file. Current backup files are usually under <code>Download/Envelope/backups</code>.</span></li>
+            <li>确认后，App 会用恢复词恢复身份私钥，再从备份中恢复联系人、群组、同步入口和自动备份策略。<span class="en" lang="en">After confirmation, the app recovers the identity private keys from the phrase, then restores contacts, groups, sync entry, and auto-backup settings from the backup.</span></li>
           </ol>
         </div>
       </div>
       <div class="notice">
         面向真实用户的恢复流程是“恢复词 + 本地备份文件”一起完成。24 词用于恢复同一个加密身份；联系人、群组、同步服务入口和自动备份策略来自本地备份。
-        <span class="en">The real-user recovery flow is recovery phrase plus local backup file. The 24-word phrase recovers the same cryptographic identity; contacts, groups, sync service entry, and auto-backup settings come from the local backup.</span>
+        <span class="en" lang="en">The real-user recovery flow is recovery phrase plus local backup file. The 24-word phrase recovers the same cryptographic identity; contacts, groups, sync service entry, and auto-backup settings come from the local backup.</span>
       </div>
       <h3>本地备份 / Local Backup</h3>
       <p>设置页的“本地备份”位于“我的身份”之后、“安全”之前。新备份使用当前本机身份给自己加密，会导出显示名、身份 key id、同步服务入口、联系人、群组、群成员和自动备份策略；不会保存恢复词。本地备份当前不包含聊天记录，也不包含 received / sealed 文件缓存。</p>
-      <p class="en">Local Backup in Settings appears after My Identity and before Security. New backups are self-encrypted with the current local identity and export display name, identity key id, sync service entry, contacts, groups, group members, and auto-backup settings; the recovery phrase is not stored. Local backups currently do not include chat history or received / sealed file cache.</p>
+      <p class="en" lang="en">Local Backup in Settings appears after My Identity and before Security. New backups are self-encrypted with the current local identity and export display name, identity key id, sync service entry, contacts, groups, group members, and auto-backup settings; the recovery phrase is not stored. Local backups currently do not include chat history or received / sealed file cache.</p>
       <ol>
-        <li>点击“导出本地备份”，备份文件保存到 <code>Download/Envelope/backups</code>。导出不需要再次输入恢复词。<span class="en">Tap Export Local Backup. The backup is saved to <code>Download/Envelope/backups</code>. Export does not require entering the recovery phrase again.</span></li>
-        <li>自动备份可以设置为关闭、每 6 小时、每 12 小时、每天或每 72 小时检查一次，并可保留最近 3 / 7 / 14 / 30 个备份。<span class="en">Auto backup can be set to off, every 6 hours, every 12 hours, daily, or every 72 hours, and can keep the latest 3 / 7 / 14 / 30 backups.</span></li>
-        <li>自动备份在 App 打开或回到前台时检查是否到期；到期后写入 <code>Download/Envelope/backups</code>。<span class="en">Auto backup checks whether a backup is due when the app is open or resumes to foreground; due backups are written to <code>Download/Envelope/backups</code>.</span></li>
-        <li>恢复时先输入匹配的 24 词，再点击“用恢复词从本地备份恢复”并选择备份文件。<span class="en">To restore, enter the matching 24-word phrase first, then tap Restore from phrase and local backup and choose the backup file.</span></li>
-        <li>新版 v2 备份和旧版 24 词加密 v1 备份都可以导入。<span class="en">Both current v2 backups and legacy v1 backups encrypted with the 24-word phrase can be imported.</span></li>
+        <li>点击“导出本地备份”，备份文件保存到 <code>Download/Envelope/backups</code>。导出不需要再次输入恢复词。<span class="en" lang="en">Tap Export Local Backup. The backup is saved to <code>Download/Envelope/backups</code>. Export does not require entering the recovery phrase again.</span></li>
+        <li>自动备份可以设置为关闭、每 6 小时、每 12 小时、每天或每 72 小时检查一次，并可保留最近 3 / 7 / 14 / 30 个备份。<span class="en" lang="en">Auto backup can be set to off, every 6 hours, every 12 hours, daily, or every 72 hours, and can keep the latest 3 / 7 / 14 / 30 backups.</span></li>
+        <li>自动备份在 App 打开或回到前台时检查是否到期；到期后写入 <code>Download/Envelope/backups</code>。<span class="en" lang="en">Auto backup checks whether a backup is due when the app is open or resumes to foreground; due backups are written to <code>Download/Envelope/backups</code>.</span></li>
+        <li>恢复时先输入匹配的 24 词，再点击“用恢复词从本地备份恢复”并选择备份文件。<span class="en" lang="en">To restore, enter the matching 24-word phrase first, then tap Restore from phrase and local backup and choose the backup file.</span></li>
+        <li>新版 v2 备份和旧版 24 词加密 v1 备份都可以导入。<span class="en" lang="en">Both current v2 backups and legacy v1 backups encrypted with the 24-word phrase can be imported.</span></li>
       </ol>
     </section>
 
     <section id="contacts">
       <h2>3. 联系人 / Contacts</h2>
       <p>联系人通过签名 contact / IntroBundle 建立。添加前应核对 fingerprint；截图、转发或复制的 contact 只能证明数据没有被篡改，不能自动证明现实身份。</p>
-      <p class="en">Contacts are established through signed contact / IntroBundle payloads. Verify the fingerprint before adding. Screenshots, forwarded payloads, or copied contacts only prove that the data was not tampered with; they do not automatically prove real-world identity.</p>
+      <p class="en" lang="en">Contacts are established through signed contact / IntroBundle payloads. Verify the fingerprint before adding. Screenshots, forwarded payloads, or copied contacts only prove that the data was not tampered with; they do not automatically prove real-world identity.</p>
       <div class="grid">
         <div class="card">
           <h3>二维码互加 / QR Exchange</h3>
           <ol>
-            <li>一方在“联系人”页点击“加好友”，选择“出示二维码”。<span class="en">One side opens Contacts, taps Add Contact, then chooses Show QR.</span></li>
-            <li>另一方点击“扫描二维码”。<span class="en">The other side taps Scan QR.</span></li>
-            <li>扫描方确认 fingerprint 后保存联系人。<span class="en">The scanner confirms the fingerprint and saves the contact.</span></li>
-            <li>如果同步服务可用，出示方会收到扫描方的回传信息，并在确认后保存对方。<span class="en">If the sync service is available, the presenter receives the scanner's return bundle and saves it after confirmation.</span></li>
+            <li>一方在“联系人”页点击“加好友”，选择“出示二维码”。<span class="en" lang="en">One side opens Contacts, taps Add Contact, then chooses Show QR.</span></li>
+            <li>另一方点击“扫描二维码”。<span class="en" lang="en">The other side taps Scan QR.</span></li>
+            <li>扫描方确认 fingerprint 后保存联系人。<span class="en" lang="en">The scanner confirms the fingerprint and saves the contact.</span></li>
+            <li>如果同步服务可用，出示方会收到扫描方的回传信息，并在确认后保存对方。<span class="en" lang="en">If the sync service is available, the presenter receives the scanner's return bundle and saves it after confirmation.</span></li>
           </ol>
         </div>
         <div class="card">
           <h3>粘贴 contact / Paste Contact</h3>
           <ol>
-            <li>复制对方提供的 contact 内容。<span class="en">Copy the contact content provided by the other side.</span></li>
-            <li>在“加好友”中选择“粘贴 contact”。<span class="en">Choose Paste contact under Add Contact.</span></li>
-            <li>核对 fingerprint 后添加。<span class="en">Add after verifying the fingerprint.</span></li>
+            <li>复制对方提供的 contact 内容。<span class="en" lang="en">Copy the contact content provided by the other side.</span></li>
+            <li>在“加好友”中选择“粘贴 contact”。<span class="en" lang="en">Choose Paste contact under Add Contact.</span></li>
+            <li>核对 fingerprint 后添加。<span class="en" lang="en">Add after verifying the fingerprint.</span></li>
           </ol>
         </div>
       </div>
-      <p>联系人页支持“全部 / 联系人 / 群聊”过滤，过滤标签会显示未读角标；联系人和群聊统一用列表入口展示。联系人可以设置备注或删除。删除联系人会发送端到端加密的 contact-control 通知，对端收到后会同步删除对应联系人。</p>
-      <p class="en">The Contacts page supports All / Contacts / Groups filters with unread badges. Contacts and group chats are shown as unified list entries. Contacts can be noted or deleted. Deleting a contact sends an end-to-end encrypted contact-control notice; the peer deletes the matching contact after receiving it.</p>
+      <p>联系人页筛选图标依次代表“全部 / 联系人 / 群聊”，可显示未读角标；联系人和群聊统一用列表入口展示。联系人可以设置备注或删除。删除联系人会尝试发送端到端加密的 contact-control 通知，对端收到后处理相应删除；这不保证对方立即在线处理。</p>
+      <p class="en" lang="en">The Contacts page uses icons for All / Contacts / Groups filters, with unread badges. Contacts and group chats are shown as unified list entries. Contacts can be noted or deleted. Deleting a contact attempts to send an end-to-end encrypted contact-control notice; the peer handles deletion after receiving it, which may not happen immediately.</p>
     </section>
 
     <section id="chat">
       <h2>4. 聊天和文件 / Chat and Files</h2>
       <p>聊天页可以选择联系人或群组。文本发送后输入框会立即清空；发送失败会留下待重试状态，后续同步或手动重试会继续投递。</p>
-      <p class="en">The Chat page can select a contact or group. The text input clears immediately after sending. Failed sends remain as pending retry records and are retried by later sync or manual retry.</p>
+      <p class="en" lang="en">The Chat page can select a contact or group. The text input clears immediately after sending. Failed sends remain as pending retry records and are retried by later sync or manual retry.</p>
       <h3>发送状态 / Send States</h3>
+      <p>当前消息列表状态如下；部分 HA 状态提示在英文界面中仍显示中文，下方提供对应英文释义。可靠保存、送达和阅读是不同概念。</p>
+      <p class="en" lang="en">The message list uses the following states. Some HA prompts still appear in Chinese even in the English UI; their English meanings are provided below. Reliable storage, delivery, and reading are different concepts.</p>
       <ul>
-        <li><strong>已发送</strong>：已经通过直连链路送出。<span class="en"><strong>Sent</strong>: sent through the direct path.</span></li>
-        <li><strong>待接收</strong>：已经写入服务端离线邮箱，等待对方拉取。<span class="en"><strong>Waiting for pickup</strong>: written to server mailbox and waiting for the peer to pull.</span></li>
-        <li><strong>待重试</strong>：当前路径不可用，App 会保留记录并在后续重试。<span class="en"><strong>Pending retry</strong>: current path is unavailable; the app keeps the record for retry.</span></li>
-        <li><strong>已送达</strong>：对方已解密入库并返回 ACK。<span class="en"><strong>Delivered</strong>: the peer decrypted, stored, and ACKed it.</span></li>
+        <li><strong>发送中 / Sending</strong>：本机正在创建或提交消息。<span class="en" lang="en">The local client is creating or submitting the message.</span></li>
+        <li><strong>待重试 / Pending retry</strong>：当前尚未完成投递，本机保留待重试记录。<span class="en" lang="en">Delivery has not completed; the local retry record is retained.</span></li>
+        <li><strong>等待接收 / Waiting for recipient</strong>：尚无接收方送达结果，不等于对方已收到或阅读。<span class="en" lang="en">No recipient delivery result yet; this does not mean the peer has received or read it.</span></li>
+        <li><strong>已送达 / Delivered</strong>：已验证接收方签名的送达结果，不代表已读。<span class="en" lang="en">A recipient-signed delivery result has been verified; this is not a read receipt.</span></li>
+        <li><strong>历史发送状态（未验证）/ Historical send state (unverified)</strong>：旧记录缺少当前协议要求的证明。<span class="en" lang="en">The old record lacks the evidence required by the current protocol.</span></li>
+        <li><strong>接收方已拒绝 / Rejected by recipient</strong>：接收方返回拒绝结果。<span class="en" lang="en">The recipient returned a rejection.</span></li>
+        <li><strong>已过期 / Expired</strong>：信封有效期已结束，不能继续等待其送达；不代表所有磁盘副本已物理删除。<span class="en" lang="en">The envelope lifetime has ended; do not keep waiting for delivery. This does not prove physical deletion of all disk copies.</span></li>
       </ul>
+      <p>“已可靠保存，等待收件方接收”表示已取得双副本存储证明；“等待主备可靠保存；本机保留重试副本”表示仍需重试。旧链路的“已发送”不能单独作为已送达证明。</p>
+      <p class="en" lang="en">“Reliably stored, awaiting recipient” means dual-replica storage is proved. “Awaiting reliable storage; local retry copy retained” means retry is still needed. A legacy Sent label alone is not proof of delivery.</p>
       <h3>文件 / Files</h3>
       <p>在线文件上限为 64 MiB。文件会被客户端分片、加密和校验，服务器只看到密文信封。图片和视频会在对话中显示预览；点击文件时优先调用系统默认应用打开，无法打开时再退回到保存路径。</p>
-      <p class="en">Online files are limited to 64 MiB. Files are chunked, encrypted, and verified by the client; the server only sees encrypted envelopes. Images and videos show previews in chat. File taps prefer the system default app and fall back to the saved path if opening fails.</p>
+      <p class="en" lang="en">Online files are limited to 64 MiB. Files are chunked, encrypted, and verified by the client; the server only sees encrypted envelopes. Images and videos show previews in chat. File taps prefer the system default app and fall back to the saved path if opening fails.</p>
       <p>接收文件默认保存到 <code>Download/Envelope/received</code>。如果文件缓存被清空，聊天记录会标记“文件已删除”，并不再显示可打开入口。</p>
-      <p class="en">Received files are saved to <code>Download/Envelope/received</code>. If file cache is cleared, chat records are marked as file-deleted and no longer show an open action.</p>
+      <p class="en" lang="en">Received files are saved to <code>Download/Envelope/received</code>. If file cache is cleared, chat records are marked as file-deleted and no longer show an open action.</p>
       <h3>消息管理 / Message Management</h3>
       <p>聊天列表支持加载更早消息、选择多条消息和删除本机记录。删除只影响本机数据库，不会删除其他设备上的记录。</p>
-      <p class="en">The chat list supports loading earlier messages, multi-select, and local deletion. Deletion only affects the local database and does not delete records on other devices.</p>
+      <p class="en" lang="en">The chat list supports loading earlier messages, multi-select, and local deletion. Deletion only affects the local database and does not delete records on other devices.</p>
     </section>
 
     <section id="groups">
       <h2>5. 群组 / Groups</h2>
       <p>创建群组至少要选择 2 位联系人；加上创建者本人，群组最少 3 人。群主创建后本机立即显示群，受邀者在与邀请者的单聊中收到群邀请消息，可以接受或拒绝。</p>
-      <p class="en">Creating a group requires selecting at least 2 contacts; with the creator, a group needs at least 3 people. The owner sees the group locally immediately. Invitees receive invitation messages in one-to-one chats with the inviter and can accept or decline.</p>
+      <p class="en" lang="en">Creating a group requires selecting at least 2 contacts; with the creator, a group needs at least 3 people. The owner sees the group locally immediately. Invitees receive invitation messages in one-to-one chats with the inviter and can accept or decline.</p>
       <h3>三种群策略 / Three Group Policies</h3>
       <ul>
-        <li><strong>普通群</strong>：受邀者接受后成为活跃成员，可以收发群消息。<span class="en"><strong>Normal group</strong>: invitees become active after accepting and can send / receive group messages.</span></li>
-        <li><strong>验证群</strong>：成员可以在成员页核对并信任其他成员 fingerprint；发送群消息时只投递给本地信任的活跃成员。<span class="en"><strong>Verified group</strong>: members can verify and trust other members' fingerprints; sends only target locally trusted active members.</span></li>
-        <li><strong>共识群</strong>：受邀者接受后进入“等待共识”状态；活跃成员背书达到 60% 阈值后，候选成员才成为活跃成员。<span class="en"><strong>Consensus group</strong>: invitees enter a waiting-for-consensus state after accepting; candidates become active only after active-member endorsements reach the 60% threshold.</span></li>
+        <li><strong>普通群</strong>：受邀者接受后成为活跃成员，可以收发群消息。<span class="en" lang="en"><strong>Normal group</strong>: invitees become active after accepting and can send / receive group messages.</span></li>
+        <li><strong>验证群</strong>：成员可以在成员页核对并信任其他成员 fingerprint；发送群消息时只投递给本地信任的活跃成员。<span class="en" lang="en"><strong>Verified group</strong>: members can verify and trust other members' fingerprints; sends only target locally trusted active members.</span></li>
+        <li><strong>共识群</strong>：受邀者接受后进入“等待共识”状态；活跃成员背书达到 60% 阈值后，候选成员才成为活跃成员。<span class="en" lang="en"><strong>Consensus group</strong>: invitees enter a waiting-for-consensus state after accepting; candidates become active only after active-member endorsements reach the 60% threshold.</span></li>
       </ul>
       <h3>群成员管理 / Member Management</h3>
       <p>群详情页可以查看成员状态和 fingerprint。群主可以改群名、更新群头像 seed、邀请新成员和移除成员。普通群和验证群可以手动信任成员 fingerprint；共识群中该操作变为“背书入群”。</p>
-      <p class="en">Group details show member state and fingerprint. The owner can rename the group, update avatar seed, invite new members, and remove members. Normal and verified groups can manually trust member fingerprints; in consensus groups, this action becomes an admission endorsement.</p>
+      <p class="en" lang="en">Group details show member state and fingerprint. The owner can rename the group, update avatar seed, invite new members, and remove members. Normal and verified groups can manually trust member fingerprints; in consensus groups, this action becomes an admission endorsement.</p>
       <h3>退群和解散 / Leave and Dissolution</h3>
       <p>点击“退出群组”后，本机会立即退出当前群聊界面并隐藏该群，再后台通知其他成员。群主退出或有效成员少于 3 人时，群会自动解散，并携带解散原因。</p>
-      <p class="en">After tapping Leave Group, the local device exits the group chat and hides the group immediately, then notifies other members in the background. If the owner leaves or effective members fall below 3, the group dissolves automatically with a concrete reason.</p>
+      <p class="en" lang="en">After tapping Leave Group, the local device exits the group chat and hides the group immediately, then notifies other members in the background. If the owner leaves or effective members fall below 3, the group dissolves automatically with a concrete reason.</p>
       <h3>群消息和群文件 / Group Messages and Files</h3>
-      <p>群聊没有密封入口。群文本和群文件通过在线聊天发送，客户端按当前有效成员逐一加密 fan-out；每个成员收到的是独立密文信封。</p>
-      <p class="en">Group chat has no sealing entry. Group text and files are sent through online chat. The client encrypts and fans out to each current effective member; each member receives an independent encrypted envelope.</p>
+      <p>群聊和单聊都提供“密封”入口。在线群文本、群文件和离线群组密封都会按当前策略允许的活跃成员逐一加密；每个成员收到独立密文，不使用共享群密钥。在线群发会先持久化每个子信封，部分失败时使用不变的 envelope id 安全重试仍为 pending 的子项。</p>
+      <p class="en" lang="en">Both group and one-to-one chats provide a Seal entry. Online group text, group files, and offline group sealing encrypt separately for every active member allowed by the current policy; each member receives independent ciphertext and no shared group key is used. Online fan-out durably stages every child envelope first and safely retries children still marked pending with stable envelope ids after a partial failure.</p>
+      <p>创建群、邀请/接受/退出/移除成员、共识背书、改名和头像更新也采用同级持久化：群状态、签名群事件和每个收件人的密文在一个本地事务中先写入，再连网发送。App 或网络中断后会使用原 envelope id 继续重试。</p>
+      <p class="en" lang="en">Group creation, invite/accept/leave/remove, consensus endorsement, rename, and avatar updates use the same durable policy: group state, the signed event, and every recipient ciphertext are committed in one local transaction before network delivery. After an app or network interruption, retry continues with the original envelope ids.</p>
     </section>
 
     <section id="sync">
       <h2>6. 消息同步 / Message Sync</h2>
-      <p>同步服务入口是中继矩阵的 bootstrap 地址。进入“设置”里的“消息同步”，在“同步服务入口”输入域名或 IP 并保存。App 会通过该入口刷新签名节点清单，然后在可用节点之间自动切换。</p>
-      <p class="en">The sync service entry is the bootstrap address for the relay matrix. Open Settings -> Message Sync, enter a domain or IP in Sync Service Entry, and save. The app refreshes the signed node manifest through that entry, then automatically switches among available nodes.</p>
+      <p>本次发布包含 HA v2 中继引导配置和可信管理员公钥。App 校验签名集群信息并重新发现可用主节点，不需要每次故障都手动切换备用入口。自建服务必须提供匹配的信任配置，单独修改地址不能绕过签名校验。</p>
+      <p class="en" lang="en">This release includes HA v2 relay bootstrap configuration and a trusted administrator public key. The app verifies signed cluster information and rediscovers the available leader, without manually selecting a standby after every failure. A self-hosted service needs matching trust configuration; changing an address alone cannot bypass signature checks.</p>
+      <p>在“设置 → 消息同步”启用“自动同步”。需要修改时，在“中继矩阵入口”输入受信任域名或 IP，点击“保存同步服务入口”，再点击“立即同步”。</p>
+      <p class="en" lang="en">Enable Auto sync in Settings → Message sync. When changing the entry, enter a trusted domain or IP in Relay matrix entry, choose Save sync entry, then Sync now.</p>
       <ul>
-        <li>自动同步会注册当前设备 route、拉取 mailbox、ACK 已解密消息并查询送达状态。<span class="en">Auto sync registers the current device route, pulls mailbox, ACKs decrypted messages, and checks delivery status.</span></li>
-        <li>“立即同步”会立刻执行一次注册、拉取、ACK 和待重试消息处理。<span class="en">Sync Now immediately runs registration, pull, ACK, and pending-message processing.</span></li>
-        <li>App 前台运行时会更积极地拉取 mailbox，以降低消息到达延迟。<span class="en">When the app is in the foreground, it pulls mailbox more aggressively to reduce perceived arrival latency.</span></li>
-        <li>节点清单和节点身份都需要签名校验；节点不能解密消息内容。<span class="en">Node manifests and node identities require signature verification; nodes cannot decrypt message content.</span></li>
+        <li>同步更新接收路由、拉取信封、解密入库，并处理待重试消息和接收方签名结果。<span class="en" lang="en">Sync updates receive routes, pulls envelopes, decrypts and stores messages, and processes retries and recipient-signed results.</span></li>
+        <li>“可靠保存”证明中继已满足双副本要求；“已送达”需要接收方结果，两者都不等于已读。<span class="en" lang="en">Reliable storage proves the relay meets the dual-replica requirement. Delivered requires a recipient result. Neither is a read receipt.</span></li>
+        <li>前台运行时拉取更积极；Android 后台限制、节电策略或强制停止可能延迟接收。重新打开 App 后可点“立即同步”。<span class="en" lang="en">Foreground polling is more active. Android background limits, power-saving policies, or force-stopping may delay reception. Reopen the app and use Sync now.</span></li>
+        <li>同步异常时核对网络、入口和系统时间。不要通过关闭签名校验或反复更换不可信入口解决。<span class="en" lang="en">For sync errors, check connectivity, entry, and system time. Do not work around them by disabling verification or repeatedly selecting untrusted entries.</span></li>
       </ul>
-      <p>如果未配置同步服务，点对点直连和离线密封仍可使用，但 mailbox、送达回执、二维码互加回传和多入口节点池不会运行。</p>
-      <p class="en">If no sync service is configured, P2P direct and offline sealing can still be used, but mailbox, delivery receipts, QR mutual-add return flow, and multi-entry node pool will not run.</p>
+      <p>坏密文会被有界隔离，经过认证但缺少前置群事件的密文会延迟重试，避免阻塞其他消息。延迟队列最多 256 条、单条 12 MiB、合计 64 MiB，保留 7 天；隔离审计最多 1000 条且保留 7 天。</p>
+      <p class="en" lang="en">Poison ciphertext is handled with bounded quarantine. Authenticated ciphertext awaiting earlier group events is deferred so other messages can progress. The deferred queue is limited to 256 items, 12 MiB each, 64 MiB total, for seven days. Quarantine audit retains at most 1,000 records for seven days.</p>
+      <p>中继不可用时，已有可用 P2P 路径或离线密封仍可能使用，但依赖中继的收发与二维码回传不能保证运行。完整 HA 网络分区、容量、长期运行和双端真实设备验收仍在进行。</p>
+      <p class="en" lang="en">If the relay is unavailable, existing usable P2P paths or offline sealing may still work, but relay-dependent messaging and QR return exchange are unavailable or unreliable. Full HA partition, capacity, endurance, and real-device dual-client acceptance are still in progress.</p>
     </section>
 
     <section id="seal">
       <h2>7. 密封和拆封 / Sealing and Opening</h2>
-      <p>密封是点对点离线转交能力：发送方选择一位联系人，把文本或文件密封成只有该联系人能打开的离线信封文件，然后通过邮箱、网盘、U 盘等外部工具或渠道转交。外部工具或渠道只负责搬运密文。</p>
-      <p class="en">Sealing is a one-to-one offline transfer capability: the sender selects one contact and seals text or a file into an offline envelope file that only that contact can open, then transfers it through external tools or channels such as email, cloud drive, or USB drive. External tools only carry ciphertext.</p>
+      <p>密封是离线转交能力：发送方选择一位联系人或一个群组，把文本或文件密封成离线信封文件，然后通过邮箱、网盘、U 盘等外部工具或渠道转交。单聊信封只有该联系人能打开；群组文件使用 <code>ENVELOPE_GROUP_STREAM_V1</code>，为每位符合策略的活跃成员写入独立密文，因此文件大小会随收件人数增加。外部工具或渠道只负责搬运密文。</p>
+      <p class="en" lang="en">Sealing is an offline transfer capability: the sender selects one contact or group and seals text or a file into an offline envelope file, then transfers it through external tools or channels such as email, cloud drive, or USB drive. A one-to-one envelope can be opened only by that contact. A group file uses <code>ENVELOPE_GROUP_STREAM_V1</code> and writes independent ciphertext for every policy-eligible active member, so its size grows with recipient count. External tools only carry ciphertext.</p>
       <div class="grid">
         <div class="card">
           <h3>发送方密封 / Sender Seals</h3>
           <ol>
-            <li>进入与某位联系人的单聊。<span class="en">Open a one-to-one chat with a contact.</span></li>
-            <li>点击顶部“密封”。<span class="en">Tap Seal at the top.</span></li>
-            <li>选择密封文本或本地文件。<span class="en">Choose text or a local file to seal.</span></li>
-            <li>生成的文件保存到 <code>Download/Envelope/sealed</code>。<span class="en">The generated file is saved to <code>Download/Envelope/sealed</code>.</span></li>
+            <li>进入与某位联系人的单聊或一个有效群聊。<span class="en" lang="en">Open a one-to-one chat with a contact or an active group chat.</span></li>
+            <li>点击顶部“密封”。<span class="en" lang="en">Tap Seal at the top.</span></li>
+            <li>选择密封文本或本地文件。<span class="en" lang="en">Choose text or a local file to seal.</span></li>
+            <li>生成的文件保存到 <code>Download/Envelope/sealed</code>。<span class="en" lang="en">The generated file is saved to <code>Download/Envelope/sealed</code>.</span></li>
           </ol>
         </div>
         <div class="card">
           <h3>接收方拆封 / Receiver Opens</h3>
           <ol>
-            <li>进入底部“拆封”。<span class="en">Open the bottom Open tab.</span></li>
-            <li>选择离线信封文件，或粘贴 base64 内容。<span class="en">Choose an offline envelope file or paste base64 content.</span></li>
-            <li>点击“解密导入”。<span class="en">Tap Decrypt and Import.</span></li>
-            <li>拆封成功后，消息或文件会进入本机聊天记录。<span class="en">After successful opening, the message or file is added to local chat history.</span></li>
+            <li>进入底部“拆封”。<span class="en" lang="en">Open the bottom Open tab.</span></li>
+            <li>选择离线信封文件，或粘贴 base64 内容。<span class="en" lang="en">Choose an offline envelope file or paste base64 content.</span></li>
+            <li>点击“解密导入”。<span class="en" lang="en">Tap Decrypt and Import.</span></li>
+            <li>拆封成功后，消息或文件会进入本机聊天记录。<span class="en" lang="en">After successful opening, the message or file is added to local chat history.</span></li>
           </ol>
         </div>
       </div>
+      <p>拆封群组流时，App 会跳过写给其他成员的密文，只导入当前身份可以解密且群成员关系、epoch 和签名均有效的内容。</p>
+      <p class="en" lang="en">When opening a group stream, the app skips ciphertext addressed to other members and imports only content decryptable by the current identity with valid membership, epoch, and signatures.</p>
+      <p>Android 会接管 <code>envelope://yourturn/open</code> 并进入“拆封”页。也可以在文件管理器或浏览器下载列表中直接打开 <code>.envelope</code> 文件；系统会把文件 URI 交给 Envelope 导入。若尚未建立身份，App 会在创建或恢复身份后继续处理该文件。</p>
+      <p class="en" lang="en">Android handles <code>envelope://yourturn/open</code> by opening the Open tab. You can also open an <code>.envelope</code> file directly from a file manager or browser downloads; Android passes its URI to Envelope for import. If no identity exists yet, the app resumes the import after identity creation or recovery.</p>
       <p>“离线”不是单纯指断网，而是指这次传输不走 Envelope 的在线投递链路，也不依赖 P2P、服务端路由或服务端离线邮箱。</p>
-      <p class="en">Offline does not simply mean disconnected. It means this transfer does not use Envelope's online delivery chain and does not depend on P2P, server routes, or server mailbox.</p>
+      <p class="en" lang="en">Offline does not simply mean disconnected. It means this transfer does not use Envelope's online delivery chain and does not depend on P2P, server routes, or server mailbox.</p>
     </section>
 
     <section id="maintenance">
       <h2>8. 安全和维护 / Security and Maintenance</h2>
       <h3>本地锁屏 / Local Lock</h3>
-      <p>设置页可以开启“打开 App 时验证身份”。开启后，打开 App 和执行高风险操作时会使用系统 PIN、密码或生物识别确认。</p>
-      <p class="en">Settings can enable authentication when opening the app. When enabled, opening the app and sensitive actions use system PIN, password, or biometrics.</p>
+      <p>设置页可以开启“打开 App 时验证身份”。开启后，打开 App 和执行高风险操作时使用 Android 系统 PIN、密码或生物识别确认。请先在手机系统中设置可用的屏幕锁；验证失败或取消时不会解锁。Android 不使用 Windows 版的六位应用解锁码，也没有默认 <code>123456</code> 解锁码。</p>
+      <p class="en" lang="en">Settings can enable authentication when opening the app. Opening and sensitive actions then use Android system PIN, password, or biometrics. Set up a supported screen lock in Android first; failure or cancellation leaves the app locked. Android does not use the Windows six-digit app code and has no default <code>123456</code> unlock code.</p>
       <h3>清空文件缓存 / Clear File Cache</h3>
       <p>设置页的“清空文件缓存”会删除 <code>Download/Envelope/received</code> 和 <code>Download/Envelope/sealed</code> 下的文件，并把对应聊天记录或密封历史标记为文件已删除。</p>
-      <p class="en">Clear File Cache in Settings deletes files under <code>Download/Envelope/received</code> and <code>Download/Envelope/sealed</code>, then marks matching chat records or sealed history as file-deleted.</p>
+      <p class="en" lang="en">Clear File Cache in Settings deletes files under <code>Download/Envelope/received</code> and <code>Download/Envelope/sealed</code>, then marks matching chat records or sealed history as file-deleted.</p>
       <h3>诊断日志 / Diagnostic Logs</h3>
       <p>诊断日志记录操作状态、耗时、错误和网络路径，不记录消息内容、文件内容、私钥或恢复词。可以在设置页导出或清空诊断日志。</p>
-      <p class="en">Diagnostic logs record operation status, timing, errors, and network path. They do not record message content, file content, private keys, or recovery phrases. Logs can be exported or cleared in Settings.</p>
+      <p class="en" lang="en">Diagnostic logs record operation status, timing, errors, and network path. They do not record message content, file content, private keys, or recovery phrases. Logs can be exported or cleared in Settings.</p>
+      <h3>语言与手册 / Language and Manual</h3>
+      <p>Android 界面按系统语言匹配简体中文或英文；当前没有 Windows 版的“外观与语言”选择页，使用固定浅色主题。手册同时提供中英对照，内嵌页面无需联网或启用 JavaScript。</p>
+      <p class="en" lang="en">Android selects Simplified Chinese or English from the system locale. It currently has no Windows-style Appearance and language page and uses a fixed light theme. This manual provides both languages together and needs neither a network connection nor JavaScript.</p>
       <h3>关于页 / About Page</h3>
       <p>关于页显示版本信息、APK 签名证书 SHA-256、内置用户手册、源代码仓库和许可证。用户手册随 APK 打包，不需要单独的网页服务。</p>
-      <p class="en">The About page shows version information, APK signing certificate SHA-256, bundled user manual, source repository, and license. The user manual is packaged with the APK and does not require a separate web service.</p>
+      <p class="en" lang="en">The About page shows version information, APK signing certificate SHA-256, bundled user manual, source repository, and license. The user manual is packaged with the APK and does not require a separate web service.</p>
     </section>
 
     <section id="faq">
       <h2>9. 常见问题 / FAQ</h2>
       <h3>为什么恢复需要本地备份文件？ / Why does recovery need a local backup file?</h3>
       <p>24 词只恢复身份密钥。面向真实用户的恢复需要同时恢复联系人、群组、同步入口和自动备份策略，所以应使用“恢复词 + 本地备份文件”的完整流程。</p>
-      <p class="en">The 24-word phrase only recovers identity keys. Real-user recovery also needs contacts, groups, sync entry, and auto-backup settings, so use the complete recovery phrase plus local backup file flow.</p>
+      <p class="en" lang="en">The 24-word phrase only recovers identity keys. Real-user recovery also needs contacts, groups, sync entry, and auto-backup settings, so use the complete recovery phrase plus local backup file flow.</p>
       <h3>为什么群邀请点了接受后还要等待？ / Why is there a wait after accepting a group invitation?</h3>
       <p>接受邀请需要写入本机状态，并把状态同步给相关成员。共识群还需要活跃成员背书达到阈值后才会变为可收发消息的活跃成员。</p>
-      <p class="en">Accepting an invitation writes local state and syncs it to related members. Consensus groups also require active-member endorsements to reach the threshold before the candidate becomes an active member.</p>
-      <h3>为什么消息显示待接收？ / Why does a message show waiting for pickup?</h3>
-      <p>这表示消息已经进入服务端离线邮箱，对方上线并完成同步后才会变为已送达。</p>
-      <p class="en">It means the message is in the server mailbox. It becomes delivered after the peer comes online and completes sync.</p>
+      <p class="en" lang="en">Accepting an invitation writes local state and syncs it to related members. Consensus groups also require active-member endorsements to reach the threshold before the candidate becomes an active member.</p>
+      <h3>为什么消息显示等待接收？ / Why does a message show waiting for recipient?</h3>
+      <p>“等待接收”表示还没有接收方送达结果。即使已取得可靠保存证明，也要等对方上线、处理消息并返回有效签名结果后才算已送达；这不是已读状态。</p>
+      <p class="en" lang="en">Waiting for recipient means there is no recipient delivery result yet. Even after reliable storage is proved, delivery requires the peer to come online, process the message, and return a valid signed result. This is not a read receipt.</p>
       <h3>为什么文件打开失败？ / Why does file opening fail?</h3>
       <p>Android 系统和厂商文件权限策略可能不同。App 会优先用默认应用打开文件；如果系统拒绝，会退回到保存路径或提示错误。</p>
-      <p class="en">Android system and vendor file-permission policies may differ. The app first tries the default application; if the system rejects it, the app falls back to the saved path or shows an error.</p>
+      <p class="en" lang="en">Android system and vendor file-permission policies may differ. The app first tries the default application; if the system rejects it, the app falls back to the saved path or shows an error.</p>
     </section>
+    <p class="notice">项目仍为 MVP，尚未完成独立安全审计。恢复词和系统解锁凭据不要发送给他人。<span class="en" lang="en">The project remains an MVP without an independent security audit. Do not send your recovery phrase or system unlock credentials to others.</span></p>
   </main>
 
   <footer>
-    <div class="wrap">Last updated: 2026-07-07</div>
+    <div class="wrap">复核日期 / Reviewed: 2026-09-21 · Envelope 1.0.1 · AGPL-3.0-or-later</div>
   </footer>
 </body>
 </html>

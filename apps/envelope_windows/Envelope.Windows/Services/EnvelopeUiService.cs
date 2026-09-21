@@ -22,7 +22,8 @@ public sealed class EnvelopeUiService(
     EnvelopeClientEngine engine,
     EnvelopePaths paths,
     DiagnosticLogService diagnostics,
-    ILocalUnlockGuard unlockGuard) : IEnvelopeUiService, IAsyncDisposable
+    ILocalUnlockGuard unlockGuard,
+    AppPasscodeGuard passcodeGuard) : IEnvelopeUiService, IAsyncDisposable
 {
     private const string RepositoryUrl = "https://github.com/louisir/envelope";
     private const string LicenseUrl = "https://www.gnu.org/licenses/agpl-3.0.html";
@@ -58,13 +59,16 @@ public sealed class EnvelopeUiService(
                     cancellationToken).ConfigureAwait(false);
                 await unlockGuard.RequireUnlockAsync(
                     localLockEnabled,
-                    "验证当前 Windows 用户以继续 Envelope 敏感操作",
+                    "输入程序解锁码以继续 Envelope 敏感操作",
                     cancellationToken).ConfigureAwait(false);
             }
 
             object? data = null;
             switch (request.Action)
             {
+                case UiAction.ChangeUnlockCode:
+                    if (!await passcodeGuard.ChangeCodeAsync().ConfigureAwait(false)) return Cancelled();
+                    break;
                 case UiAction.ShowContactQr:
                     OwnedIntroSession? ownedIntroSession = null;
                     IntroBundleSummary intro;
@@ -338,8 +342,8 @@ public sealed class EnvelopeUiService(
                         await unlockGuard.RequireUnlockAsync(
                             true,
                             settings.LocalLockEnabled
-                                ? "验证 Windows Hello 后启用 Envelope 本地锁"
-                                : "验证 Windows Hello 后关闭 Envelope 本地锁",
+                                ? "输入程序解锁码以启用 Envelope 本地锁"
+                                : "输入程序解锁码以关闭 Envelope 本地锁",
                             cancellationToken).ConfigureAwait(false);
                     }
                     await engine.UpdateSettingsAsync(settings, cancellationToken).ConfigureAwait(false);
@@ -469,9 +473,16 @@ public sealed class EnvelopeUiService(
         item.Direction == CoreDirection.Outgoing ? Models.MessageDirection.Outgoing : Models.MessageDirection.Incoming,
         item.Text,
         item.CreatedAt,
+        item.VerifiedDeliveryState == Envelope.Windows.Core.Domain.HaDeliveryState.Delivered && item.VerifiedRecipientResultJson is not null ? MessageDeliveryState.Delivered :
+        item.VerifiedDeliveryState == Envelope.Windows.Core.Domain.HaDeliveryState.Rejected ? MessageDeliveryState.Rejected :
+        item.VerifiedDeliveryState == Envelope.Windows.Core.Domain.HaDeliveryState.Expired ? MessageDeliveryState.Expired :
+        item.VerifiedDeliveryState == Envelope.Windows.Core.Domain.HaDeliveryState.Deferred ? MessageDeliveryState.Deferred :
+        item.StorageState == Envelope.Windows.Core.Domain.HaStorageState.Replicated ? MessageDeliveryState.Replicated :
+        item.StorageState == Envelope.Windows.Core.Domain.HaStorageState.StagedSingle ? MessageDeliveryState.StagedSingle :
         item.DeliveryState switch
         {
-            CoreDelivery.Delivered => MessageDeliveryState.Delivered,
+            CoreDelivery.Delivered when item.VerifiedRecipientResultJson is not null => MessageDeliveryState.Delivered,
+            CoreDelivery.Delivered => MessageDeliveryState.LegacyUnverified,
             CoreDelivery.Sent or CoreDelivery.ServerMailbox or CoreDelivery.Received => MessageDeliveryState.Sent,
             CoreDelivery.Failed => MessageDeliveryState.Failed,
             _ => MessageDeliveryState.Pending,
@@ -602,7 +613,7 @@ public sealed class EnvelopeUiService(
                         error,
                         cancellationToken).ConfigureAwait(false);
                 }
-                await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false);
+                await Task.Delay(TimeSpan.FromSeconds(engine.UsesHaRelay ? 5 : 30), cancellationToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -666,7 +677,7 @@ public sealed class EnvelopeUiService(
                 error,
                 cancellationToken).ConfigureAwait(false);
         }
-        if (settings.AutoSyncEnabled && !string.IsNullOrWhiteSpace(settings.SyncServiceUrl))
+        if (settings.AutoSyncEnabled && (engine.UsesHaRelay || !string.IsNullOrWhiteSpace(settings.SyncServiceUrl)))
         {
             try
             {

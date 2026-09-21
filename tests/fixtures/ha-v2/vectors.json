@@ -1,0 +1,502 @@
+{
+  "administrator_public": "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w",
+  "binding": {
+    "envelope_id": "envelope-1",
+    "envelope_sha256": "4bAzYPOjxr1StFEbwCefB7OKGxu3qyCdMYM_dhfidi8",
+    "not_after": "1790000060000",
+    "operation_id": "op-1",
+    "recipient_key_id": "d9abbf012133a8b5f6235dfbde3c901a",
+    "sender_key_id": "ea1bd7fd065ee6efbc92ee82b1cefa4f"
+  },
+  "duplicate_recipient_result_json": "{\"version\":2,\"version\":2,\"sender_key_id\":\"ea1bd7fd065ee6efbc92ee82b1cefa4f\",\"recipient_key_id\":\"d9abbf012133a8b5f6235dfbde3c901a\",\"envelope_id\":\"envelope-1\",\"envelope_sha256\":\"4bAzYPOjxr1StFEbwCefB7OKGxu3qyCdMYM_dhfidi8\",\"outcome\":\"delivered\",\"reason_code\":\"\",\"received_at\":\"1790000001000\",\"result_id\":\"result-1\",\"result_sequence\":\"1\",\"signature\":\"FJKy-z1bKtyG5NDkxgOuayH0Zsz9Fq-e1PgpsbyLcfp3Frj3CDXVTWB62JWFHr9RX3lh1osID-BYmm1WH1uSCw\"}",
+  "format": "EnvelopeHA/V2 test vectors 1",
+  "invalid_cases": [
+    {
+      "mutation": "nonce",
+      "reason": "signature and challenge binding",
+      "replacement": "another-client-nonce",
+      "source": "cluster_status"
+    },
+    {
+      "mutation": "applied_index",
+      "reason": "ready requires applied control head even after valid resign",
+      "replacement": "41",
+      "source": "cluster_status"
+    },
+    {
+      "mutation": "replica_evidence",
+      "reason": "distinct business replicas required even after valid resign",
+      "replacement": "duplicate first ack as second ack",
+      "source": "commit_receipt"
+    },
+    {
+      "mutation": "envelope_sha256",
+      "reason": "content binding",
+      "replacement": "0SG-MQMAe0Ht-W-CYpJfjH1hiUr-mgQYQ7Yx9pRFvFc",
+      "source": "recipient_delivered"
+    }
+  ],
+  "invalid_decimal_json": [
+    "0",
+    "\"01\"",
+    "\"-1\"",
+    "\"18446744073709551616\""
+  ],
+  "now_ms": "1790000000000",
+  "recipient_contact": {
+    "agreement_public": "Dw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8",
+    "display_name": "test-5",
+    "key_id": "d9abbf012133a8b5f6235dfbde3c901a",
+    "signing_public": "bnoc3Smwt4_ROvTFWY_v9O8qlxZuPKby5Pv8zYBQW_E",
+    "version": 1
+  },
+  "sender_contact": {
+    "agreement_public": "Dg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4",
+    "display_name": "test-4",
+    "key_id": "ea1bd7fd065ee6efbc92ee82b1cefa4f",
+    "signing_public": "ypOsFwUYcHHWe4PH_w7-gQjo7EUwV113JoeTM9vavnw",
+    "version": 1
+  },
+  "signed_request": {
+    "auth": {
+      "actor_id": "ea1bd7fd065ee6efbc92ee82b1cefa4f",
+      "body_sha256": "2quYiDM0b3Qp61d7mYS4e4Q_Ytc0ijL9OKjn_Gfjvpg",
+      "cluster_id": "test-cluster",
+      "config_epoch": "1",
+      "control_generation": "1",
+      "nonce": "request-nonce-0000000000000001",
+      "operation_id": "op-1",
+      "protocol_version": 2,
+      "request_kind": "store_envelope",
+      "requested_at": "1790000000000",
+      "signature": "4gCzy5xNoY8G8iPagLI_42O8XjWVmWwfgW8toliXLc5ZLhB6ZhcXwrW8qCaC0Tpvg52yBle80jqXLgrqgGX3DQ"
+    },
+    "body_b64": "eyJiaW5kaW5nIjp7Im9wZXJhdGlvbl9pZCI6Im9wLTEiLCJzZW5kZXJfa2V5X2lkIjoiZWExYmQ3ZmQwNjVlZTZlZmJjOTJlZTgyYjFjZWZhNGYiLCJyZWNpcGllbnRfa2V5X2lkIjoiZDlhYmJmMDEyMTMzYThiNWY2MjM1ZGZiZGUzYzkwMWEiLCJlbnZlbG9wZV9pZCI6ImVudmVsb3BlLTEiLCJlbnZlbG9wZV9zaGEyNTYiOiI0YkF6WVBPanhyMVN0RkVid0NlZkI3T0tHeHUzcXlDZE1ZTV9kaGZpZGk4Iiwibm90X2FmdGVyIjoiMTc5MDAwMDA2MDAwMCJ9LCJzZW5kZXJfY29udGFjdCI6eyJ2ZXJzaW9uIjoxLCJkaXNwbGF5X25hbWUiOiJ0ZXN0LTQiLCJzaWduaW5nX3B1YmxpYyI6InlwT3NGd1VZY0hIV2U0UEhfdzctZ1FqbzdFVXdWMTEzSm9lVE05dmF2bnciLCJhZ3JlZW1lbnRfcHVibGljIjoiRGc0T0RnNE9EZzRPRGc0T0RnNE9EZzRPRGc0T0RnNE9EZzRPRGc0T0RnNCIsImtleV9pZCI6ImVhMWJkN2ZkMDY1ZWU2ZWZiYzkyZWU4MmIxY2VmYTRmIn0sImVudmVsb3BlX2I2NCI6Iktpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpbyIsImNyZWF0ZWRfYXQiOiIxNzkwMDAwMDAwMDAwIn0"
+  },
+  "valid": [
+    {
+      "canonical_json": "[2,\"test-cluster\",\"1\",\"1\",[[\"S1\",\"https://primary.example.test/\",\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\",\"S1-disk-1\"],[\"S2\",\"https://backup.example.test/\",\"7UkoxijRwsbq6QM4kFmVYSlZJzpcY_k2NsFGFKyHN9E\",\"S2-disk-1\"]],[\"Q\",\"S1\",\"S2\"],\"1789999999000\",\"1790604800000\"]",
+      "document": {
+        "business_nodes": [
+          {
+            "node_id": "S1",
+            "node_incarnation": "S1-disk-1",
+            "public_url": "https://primary.example.test/",
+            "signing_public": "gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q"
+          },
+          {
+            "node_id": "S2",
+            "node_incarnation": "S2-disk-1",
+            "public_url": "https://backup.example.test/",
+            "signing_public": "7UkoxijRwsbq6QM4kFmVYSlZJzpcY_k2NsFGFKyHN9E"
+          }
+        ],
+        "cluster_id": "test-cluster",
+        "config_epoch": "1",
+        "control_generation": "1",
+        "control_node_ids": [
+          "Q",
+          "S1",
+          "S2"
+        ],
+        "issued_at": "1789999999000",
+        "not_after": "1790604800000",
+        "protocol_version": 2,
+        "signature": "0cFz2WfTUGNfTUu29XV0trXLYZnGdn0ZyQ6tnRaUANRv0pM4ZyoHlZHJPnChQyJk4GvI9SIgPYM95VFUi6eKCw"
+      },
+      "kind": "ClusterConfig",
+      "name": "cluster_config",
+      "public_key": "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w",
+      "signature": "0cFz2WfTUGNfTUu29XV0trXLYZnGdn0ZyQ6tnRaUANRv0pM4ZyoHlZHJPnChQyJk4GvI9SIgPYM95VFUi6eKCw",
+      "signing_bytes_b64": "RW52ZWxvcGVIQS9WMi9DbHVzdGVyQ29uZmlnAFsyLCJ0ZXN0LWNsdXN0ZXIiLCIxIiwiMSIsW1siUzEiLCJodHRwczovL3ByaW1hcnkuZXhhbXBsZS50ZXN0LyIsImdUbDNEcWg5RjE5V28xUm13MHgtek11TmlwRzA3amVpWGZZUFc0X0pzNVEiLCJTMS1kaXNrLTEiXSxbIlMyIiwiaHR0cHM6Ly9iYWNrdXAuZXhhbXBsZS50ZXN0LyIsIjdVa294aWpSd3NicTZRTTRrRm1WWVNsWkp6cGNZX2syTnNGR0ZLeUhOOUUiLCJTMi1kaXNrLTEiXV0sWyJRIiwiUzEiLCJTMiJdLCIxNzg5OTk5OTk5MDAwIiwiMTc5MDYwNDgwMDAwMCJd"
+    },
+    {
+      "canonical_json": "[2,\"test-cluster\",\"1\",\"1\",\"S1\",\"S1-disk-1\",\"client-nonce-0000000000000001\",\"leader\",\"normal\",\"S1\",\"9007199254740993\",\"42\",\"42\",true,\"\",\"1790000000000\",\"1790000005000\",[\"ha-v2\",\"recipient-results\"]]",
+      "document": {
+        "applied_index": "42",
+        "capabilities": [
+          "ha-v2",
+          "recipient-results"
+        ],
+        "cluster_id": "test-cluster",
+        "commit_index": "42",
+        "config_epoch": "1",
+        "control_generation": "1",
+        "expires_at": "1790000005000",
+        "issued_at": "1790000000000",
+        "leader_node_id": "S1",
+        "leader_term": "9007199254740993",
+        "mode": "normal",
+        "node_id": "S1",
+        "node_incarnation": "S1-disk-1",
+        "node_signature": "-yvNUO0QdTC22JsWgdH33aCioUilBSaBtwmSOtmXB4ljY4MIO-blq8OA1dWturi7mWs0c3TKhSyR2Ou3fVPrDg",
+        "nonce": "client-nonce-0000000000000001",
+        "protocol_version": 2,
+        "ready": true,
+        "reason_code": "",
+        "role": "leader"
+      },
+      "kind": "ClusterStatus",
+      "name": "cluster_status",
+      "public_key": "gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q",
+      "signature": "-yvNUO0QdTC22JsWgdH33aCioUilBSaBtwmSOtmXB4ljY4MIO-blq8OA1dWturi7mWs0c3TKhSyR2Ou3fVPrDg",
+      "signing_bytes_b64": "RW52ZWxvcGVIQS9WMi9DbHVzdGVyU3RhdHVzAFsyLCJ0ZXN0LWNsdXN0ZXIiLCIxIiwiMSIsIlMxIiwiUzEtZGlzay0xIiwiY2xpZW50LW5vbmNlLTAwMDAwMDAwMDAwMDAwMDEiLCJsZWFkZXIiLCJub3JtYWwiLCJTMSIsIjkwMDcxOTkyNTQ3NDA5OTMiLCI0MiIsIjQyIix0cnVlLCIiLCIxNzkwMDAwMDAwMDAwIiwiMTc5MDAwMDAwNTAwMCIsWyJoYS12MiIsInJlY2lwaWVudC1yZXN1bHRzIl1d"
+    },
+    {
+      "canonical_json": "[2,\"test-cluster\",\"1\",\"1\",\"9007199254740993\",\"attempt-1\",\"op-1\",\"ea1bd7fd065ee6efbc92ee82b1cefa4f\",\"8CZo_idGoS8IOj_idV-8KTHsLvbUkOA0rEICPeSL0is\",\"EnSxQ8c2edqROVVH9Lz_9vsPxGy0xXPr_OEX-ioLHos\",\"S1\",\"S1-disk-1\"]",
+      "document": {
+        "actor_id": "ea1bd7fd065ee6efbc92ee82b1cefa4f",
+        "attempt_id": "attempt-1",
+        "cluster_id": "test-cluster",
+        "config_epoch": "1",
+        "control_generation": "1",
+        "leader_term": "9007199254740993",
+        "logical_hash": "8CZo_idGoS8IOj_idV-8KTHsLvbUkOA0rEICPeSL0is",
+        "node_id": "S1",
+        "node_incarnation": "S1-disk-1",
+        "operation_id": "op-1",
+        "payload_hash": "EnSxQ8c2edqROVVH9Lz_9vsPxGy0xXPr_OEX-ioLHos",
+        "protocol_version": 2,
+        "signature": "z5T3DYwKYZKzRmpkSBdge5GzxGir9m5DHGCC9wlK72dWIMW3_cDtO8unG_EQkIGTPl5W9zuGrqOgkXRIKMdHBg"
+      },
+      "kind": "PrepareAck",
+      "name": "prepare_ack",
+      "public_key": "gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q",
+      "signature": "z5T3DYwKYZKzRmpkSBdge5GzxGir9m5DHGCC9wlK72dWIMW3_cDtO8unG_EQkIGTPl5W9zuGrqOgkXRIKMdHBg",
+      "signing_bytes_b64": "RW52ZWxvcGVIQS9WMi9QcmVwYXJlQWNrAFsyLCJ0ZXN0LWNsdXN0ZXIiLCIxIiwiMSIsIjkwMDcxOTkyNTQ3NDA5OTMiLCJhdHRlbXB0LTEiLCJvcC0xIiwiZWExYmQ3ZmQwNjVlZTZlZmJjOTJlZTgyYjFjZWZhNGYiLCI4Q1pvX2lkR29TOElPal9pZFYtOEtUSHNMdmJVa09BMHJFSUNQZVNMMGlzIiwiRW5TeFE4YzJlZHFST1ZWSDlMel85dnNQeEd5MHhYUHJfT0VYLWlvTEhvcyIsIlMxIiwiUzEtZGlzay0xIl0"
+    },
+    {
+      "canonical_json": "[2,\"test-cluster\",\"1\",\"1\",\"9007199254740993\",\"42\",\"op-1\",\"ea1bd7fd065ee6efbc92ee82b1cefa4f\",\"d9abbf012133a8b5f6235dfbde3c901a\",\"envelope-1\",\"4bAzYPOjxr1StFEbwCefB7OKGxu3qyCdMYM_dhfidi8\",\"1790000060000\",\"replicated\",\"pending\",[[[2,\"test-cluster\",\"1\",\"1\",\"9007199254740993\",\"attempt-1\",\"op-1\",\"ea1bd7fd065ee6efbc92ee82b1cefa4f\",\"8CZo_idGoS8IOj_idV-8KTHsLvbUkOA0rEICPeSL0is\",\"EnSxQ8c2edqROVVH9Lz_9vsPxGy0xXPr_OEX-ioLHos\",\"S1\",\"S1-disk-1\"],\"z5T3DYwKYZKzRmpkSBdge5GzxGir9m5DHGCC9wlK72dWIMW3_cDtO8unG_EQkIGTPl5W9zuGrqOgkXRIKMdHBg\"],[[2,\"test-cluster\",\"1\",\"1\",\"9007199254740993\",\"attempt-1\",\"op-1\",\"ea1bd7fd065ee6efbc92ee82b1cefa4f\",\"8CZo_idGoS8IOj_idV-8KTHsLvbUkOA0rEICPeSL0is\",\"EnSxQ8c2edqROVVH9Lz_9vsPxGy0xXPr_OEX-ioLHos\",\"S2\",\"S2-disk-1\"],\"ym5YmI49nJSB9_gffrgxq-OMATuo8hbl7Xj9zd397yNh6WiQQM_l7RijNnn5qiTmCRqddKECtTlw9dtAfZXPBw\"]],null,\"S1\",\"1\",\"1\",null,null]",
+      "document": {
+        "cluster_id": "test-cluster",
+        "commit_index": "42",
+        "config_epoch": "1",
+        "control_generation": "1",
+        "delivery_state": "pending",
+        "envelope_id": "envelope-1",
+        "envelope_sha256": "4bAzYPOjxr1StFEbwCefB7OKGxu3qyCdMYM_dhfidi8",
+        "expiry_evidence": null,
+        "issuer_config_epoch": "1",
+        "issuer_control_generation": "1",
+        "leader_term": "9007199254740993",
+        "node_id": "S1",
+        "node_signature": "RJEkbbzWvhyjFNN5yP9aaRkSWaZPyVJ_usHzpH0G0Q1-zHPaGoujjiHGg8rtpJgjOyMII0bVi0fmeSr6PPeGCg",
+        "not_after": "1790000060000",
+        "operation_id": "op-1",
+        "proof_config": null,
+        "protocol_version": 2,
+        "recipient_key_id": "d9abbf012133a8b5f6235dfbde3c901a",
+        "replica_evidence": [
+          {
+            "actor_id": "ea1bd7fd065ee6efbc92ee82b1cefa4f",
+            "attempt_id": "attempt-1",
+            "cluster_id": "test-cluster",
+            "config_epoch": "1",
+            "control_generation": "1",
+            "leader_term": "9007199254740993",
+            "logical_hash": "8CZo_idGoS8IOj_idV-8KTHsLvbUkOA0rEICPeSL0is",
+            "node_id": "S1",
+            "node_incarnation": "S1-disk-1",
+            "operation_id": "op-1",
+            "payload_hash": "EnSxQ8c2edqROVVH9Lz_9vsPxGy0xXPr_OEX-ioLHos",
+            "protocol_version": 2,
+            "signature": "z5T3DYwKYZKzRmpkSBdge5GzxGir9m5DHGCC9wlK72dWIMW3_cDtO8unG_EQkIGTPl5W9zuGrqOgkXRIKMdHBg"
+          },
+          {
+            "actor_id": "ea1bd7fd065ee6efbc92ee82b1cefa4f",
+            "attempt_id": "attempt-1",
+            "cluster_id": "test-cluster",
+            "config_epoch": "1",
+            "control_generation": "1",
+            "leader_term": "9007199254740993",
+            "logical_hash": "8CZo_idGoS8IOj_idV-8KTHsLvbUkOA0rEICPeSL0is",
+            "node_id": "S2",
+            "node_incarnation": "S2-disk-1",
+            "operation_id": "op-1",
+            "payload_hash": "EnSxQ8c2edqROVVH9Lz_9vsPxGy0xXPr_OEX-ioLHos",
+            "protocol_version": 2,
+            "signature": "ym5YmI49nJSB9_gffrgxq-OMATuo8hbl7Xj9zd397yNh6WiQQM_l7RijNnn5qiTmCRqddKECtTlw9dtAfZXPBw"
+          }
+        ],
+        "sender_key_id": "ea1bd7fd065ee6efbc92ee82b1cefa4f",
+        "staged_guard_revision": null,
+        "storage_state": "replicated"
+      },
+      "kind": "CommitReceipt",
+      "name": "commit_receipt",
+      "public_key": "gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q",
+      "signature": "RJEkbbzWvhyjFNN5yP9aaRkSWaZPyVJ_usHzpH0G0Q1-zHPaGoujjiHGg8rtpJgjOyMII0bVi0fmeSr6PPeGCg",
+      "signing_bytes_b64": "RW52ZWxvcGVIQS9WMi9Db21taXRSZWNlaXB0AFsyLCJ0ZXN0LWNsdXN0ZXIiLCIxIiwiMSIsIjkwMDcxOTkyNTQ3NDA5OTMiLCI0MiIsIm9wLTEiLCJlYTFiZDdmZDA2NWVlNmVmYmM5MmVlODJiMWNlZmE0ZiIsImQ5YWJiZjAxMjEzM2E4YjVmNjIzNWRmYmRlM2M5MDFhIiwiZW52ZWxvcGUtMSIsIjRiQXpZUE9qeHIxU3RGRWJ3Q2VmQjdPS0d4dTNxeUNkTVlNX2RoZmlkaTgiLCIxNzkwMDAwMDYwMDAwIiwicmVwbGljYXRlZCIsInBlbmRpbmciLFtbWzIsInRlc3QtY2x1c3RlciIsIjEiLCIxIiwiOTAwNzE5OTI1NDc0MDk5MyIsImF0dGVtcHQtMSIsIm9wLTEiLCJlYTFiZDdmZDA2NWVlNmVmYmM5MmVlODJiMWNlZmE0ZiIsIjhDWm9faWRHb1M4SU9qX2lkVi04S1RIc0x2YlVrT0EwckVJQ1BlU0wwaXMiLCJFblN4UThjMmVkcVJPVlZIOUx6Xzl2c1B4R3kweFhQcl9PRVgtaW9MSG9zIiwiUzEiLCJTMS1kaXNrLTEiXSwiejVUM0RZd0tZWkt6Um1wa1NCZGdlNUd6eEdpcjltNURIR0NDOXdsSzcyZFdJTVczX2NEdE84dW5HX0VRa0lHVFBsNVc5enVHcnFPZ2tYUklLTWRIQmciXSxbWzIsInRlc3QtY2x1c3RlciIsIjEiLCIxIiwiOTAwNzE5OTI1NDc0MDk5MyIsImF0dGVtcHQtMSIsIm9wLTEiLCJlYTFiZDdmZDA2NWVlNmVmYmM5MmVlODJiMWNlZmE0ZiIsIjhDWm9faWRHb1M4SU9qX2lkVi04S1RIc0x2YlVrT0EwckVJQ1BlU0wwaXMiLCJFblN4UThjMmVkcVJPVlZIOUx6Xzl2c1B4R3kweFhQcl9PRVgtaW9MSG9zIiwiUzIiLCJTMi1kaXNrLTEiXSwieW01WW1JNDluSlNCOV9nZmZyZ3hxLU9NQVR1bzhoYmw3WGo5emQzOTd5Tmg2V2lRUU1fbDdSaWpObm41cWlUbUNScWRkS0VDdFRsdzlkdEFmWlhQQnciXV0sbnVsbCwiUzEiLCIxIiwiMSIsbnVsbCxudWxsXQ"
+    },
+    {
+      "canonical_json": "[2,\"ea1bd7fd065ee6efbc92ee82b1cefa4f\",\"d9abbf012133a8b5f6235dfbde3c901a\",\"envelope-1\",\"4bAzYPOjxr1StFEbwCefB7OKGxu3qyCdMYM_dhfidi8\",\"delivered\",\"\",\"1790000001000\",\"result-1\",\"1\"]",
+      "document": {
+        "envelope_id": "envelope-1",
+        "envelope_sha256": "4bAzYPOjxr1StFEbwCefB7OKGxu3qyCdMYM_dhfidi8",
+        "outcome": "delivered",
+        "reason_code": "",
+        "received_at": "1790000001000",
+        "recipient_key_id": "d9abbf012133a8b5f6235dfbde3c901a",
+        "result_id": "result-1",
+        "result_sequence": "1",
+        "sender_key_id": "ea1bd7fd065ee6efbc92ee82b1cefa4f",
+        "signature": "FJKy-z1bKtyG5NDkxgOuayH0Zsz9Fq-e1PgpsbyLcfp3Frj3CDXVTWB62JWFHr9RX3lh1osID-BYmm1WH1uSCw",
+        "version": 2
+      },
+      "kind": "RecipientResult",
+      "name": "recipient_delivered",
+      "public_key": "bnoc3Smwt4_ROvTFWY_v9O8qlxZuPKby5Pv8zYBQW_E",
+      "signature": "FJKy-z1bKtyG5NDkxgOuayH0Zsz9Fq-e1PgpsbyLcfp3Frj3CDXVTWB62JWFHr9RX3lh1osID-BYmm1WH1uSCw",
+      "signing_bytes_b64": "RW52ZWxvcGVIQS9WMi9SZWNpcGllbnRSZXN1bHQAWzIsImVhMWJkN2ZkMDY1ZWU2ZWZiYzkyZWU4MmIxY2VmYTRmIiwiZDlhYmJmMDEyMTMzYThiNWY2MjM1ZGZiZGUzYzkwMWEiLCJlbnZlbG9wZS0xIiwiNGJBellQT2p4cjFTdEZFYndDZWZCN09LR3h1M3F5Q2RNWU1fZGhmaWRpOCIsImRlbGl2ZXJlZCIsIiIsIjE3OTAwMDAwMDEwMDAiLCJyZXN1bHQtMSIsIjEiXQ"
+    },
+    {
+      "canonical_json": "[2,\"test-cluster\",\"1\",\"1\",\"ea1bd7fd065ee6efbc92ee82b1cefa4f\",\"op-1\",\"request-nonce-0000000000000001\",\"1790000000000\",\"store_envelope\",\"2quYiDM0b3Qp61d7mYS4e4Q_Ytc0ijL9OKjn_Gfjvpg\"]",
+      "document": {
+        "actor_id": "ea1bd7fd065ee6efbc92ee82b1cefa4f",
+        "body_sha256": "2quYiDM0b3Qp61d7mYS4e4Q_Ytc0ijL9OKjn_Gfjvpg",
+        "cluster_id": "test-cluster",
+        "config_epoch": "1",
+        "control_generation": "1",
+        "nonce": "request-nonce-0000000000000001",
+        "operation_id": "op-1",
+        "protocol_version": 2,
+        "request_kind": "store_envelope",
+        "requested_at": "1790000000000",
+        "signature": "4gCzy5xNoY8G8iPagLI_42O8XjWVmWwfgW8toliXLc5ZLhB6ZhcXwrW8qCaC0Tpvg52yBle80jqXLgrqgGX3DQ"
+      },
+      "kind": "Request",
+      "name": "request_auth",
+      "public_key": "ypOsFwUYcHHWe4PH_w7-gQjo7EUwV113JoeTM9vavnw",
+      "signature": "4gCzy5xNoY8G8iPagLI_42O8XjWVmWwfgW8toliXLc5ZLhB6ZhcXwrW8qCaC0Tpvg52yBle80jqXLgrqgGX3DQ",
+      "signing_bytes_b64": "RW52ZWxvcGVIQS9WMi9SZXF1ZXN0AFsyLCJ0ZXN0LWNsdXN0ZXIiLCIxIiwiMSIsImVhMWJkN2ZkMDY1ZWU2ZWZiYzkyZWU4MmIxY2VmYTRmIiwib3AtMSIsInJlcXVlc3Qtbm9uY2UtMDAwMDAwMDAwMDAwMDAwMSIsIjE3OTAwMDAwMDAwMDAiLCJzdG9yZV9lbnZlbG9wZSIsIjJxdVlpRE0wYjNRcDYxZDdtWVM0ZTRRX1l0YzBpakw5T0tqbl9HZmp2cGciXQ"
+    },
+    {
+      "canonical_json": "[2,\"test-cluster\",\"1\",\"2\",[[\"S1\",\"https://primary.example.test/\",\"iodf_x6zhFFXes1a_uQFRWVo3XyJ4JCGOgVXvHr0nxc\",\"S1-disk-2\"],[\"S2\",\"https://backup.example.test/\",\"6kpsY-KcUgq-9VB7Ey7F-ZVHdq6-vnuSQh7qaRRG0iw\",\"S2-disk-2\"]],[\"Q\",\"S1\",\"S2\"],\"1789999999000\",\"1790604800000\"]",
+      "document": {
+        "business_nodes": [
+          {
+            "node_id": "S1",
+            "node_incarnation": "S1-disk-2",
+            "public_url": "https://primary.example.test/",
+            "signing_public": "iodf_x6zhFFXes1a_uQFRWVo3XyJ4JCGOgVXvHr0nxc"
+          },
+          {
+            "node_id": "S2",
+            "node_incarnation": "S2-disk-2",
+            "public_url": "https://backup.example.test/",
+            "signing_public": "6kpsY-KcUgq-9VB7Ey7F-ZVHdq6-vnuSQh7qaRRG0iw"
+          }
+        ],
+        "cluster_id": "test-cluster",
+        "config_epoch": "2",
+        "control_generation": "1",
+        "control_node_ids": [
+          "Q",
+          "S1",
+          "S2"
+        ],
+        "issued_at": "1789999999000",
+        "not_after": "1790604800000",
+        "protocol_version": 2,
+        "signature": "aY9_2Gy0lp3yb1ECDbmELMUlCLtPDy9o5K8FWdjxe5LSj4dd0xR7emjSsQmL4Z4vJWosERAaHVsmkxMMHca0Cg"
+      },
+      "kind": "ClusterConfig",
+      "name": "rotated_cluster_config",
+      "public_key": "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w",
+      "signature": "aY9_2Gy0lp3yb1ECDbmELMUlCLtPDy9o5K8FWdjxe5LSj4dd0xR7emjSsQmL4Z4vJWosERAaHVsmkxMMHca0Cg",
+      "signing_bytes_b64": "RW52ZWxvcGVIQS9WMi9DbHVzdGVyQ29uZmlnAFsyLCJ0ZXN0LWNsdXN0ZXIiLCIxIiwiMiIsW1siUzEiLCJodHRwczovL3ByaW1hcnkuZXhhbXBsZS50ZXN0LyIsImlvZGZfeDZ6aEZGWGVzMWFfdVFGUldWbzNYeUo0SkNHT2dWWHZIcjBueGMiLCJTMS1kaXNrLTIiXSxbIlMyIiwiaHR0cHM6Ly9iYWNrdXAuZXhhbXBsZS50ZXN0LyIsIjZrcHNZLUtjVWdxLTlWQjdFeTdGLVpWSGRxNi12bnVTUWg3cWFSUkcwaXciLCJTMi1kaXNrLTIiXV0sWyJRIiwiUzEiLCJTMiJdLCIxNzg5OTk5OTk5MDAwIiwiMTc5MDYwNDgwMDAwMCJd"
+    },
+    {
+      "canonical_json": "[2,\"test-cluster\",\"1\",\"1\",\"9007199254740993\",\"42\",\"op-1\",\"ea1bd7fd065ee6efbc92ee82b1cefa4f\",\"d9abbf012133a8b5f6235dfbde3c901a\",\"envelope-1\",\"4bAzYPOjxr1StFEbwCefB7OKGxu3qyCdMYM_dhfidi8\",\"1790000060000\",\"replicated\",\"pending\",[[[2,\"test-cluster\",\"1\",\"1\",\"9007199254740993\",\"attempt-1\",\"op-1\",\"ea1bd7fd065ee6efbc92ee82b1cefa4f\",\"8CZo_idGoS8IOj_idV-8KTHsLvbUkOA0rEICPeSL0is\",\"EnSxQ8c2edqROVVH9Lz_9vsPxGy0xXPr_OEX-ioLHos\",\"S1\",\"S1-disk-1\"],\"z5T3DYwKYZKzRmpkSBdge5GzxGir9m5DHGCC9wlK72dWIMW3_cDtO8unG_EQkIGTPl5W9zuGrqOgkXRIKMdHBg\"],[[2,\"test-cluster\",\"1\",\"1\",\"9007199254740993\",\"attempt-1\",\"op-1\",\"ea1bd7fd065ee6efbc92ee82b1cefa4f\",\"8CZo_idGoS8IOj_idV-8KTHsLvbUkOA0rEICPeSL0is\",\"EnSxQ8c2edqROVVH9Lz_9vsPxGy0xXPr_OEX-ioLHos\",\"S2\",\"S2-disk-1\"],\"ym5YmI49nJSB9_gffrgxq-OMATuo8hbl7Xj9zd397yNh6WiQQM_l7RijNnn5qiTmCRqddKECtTlw9dtAfZXPBw\"]],null,\"S1\",\"1\",\"2\",[[2,\"test-cluster\",\"1\",\"1\",[[\"S1\",\"https://primary.example.test/\",\"gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\",\"S1-disk-1\"],[\"S2\",\"https://backup.example.test/\",\"7UkoxijRwsbq6QM4kFmVYSlZJzpcY_k2NsFGFKyHN9E\",\"S2-disk-1\"]],[\"Q\",\"S1\",\"S2\"],\"1789999999000\",\"1790604800000\"],\"0cFz2WfTUGNfTUu29XV0trXLYZnGdn0ZyQ6tnRaUANRv0pM4ZyoHlZHJPnChQyJk4GvI9SIgPYM95VFUi6eKCw\"],null]",
+      "document": {
+        "cluster_id": "test-cluster",
+        "commit_index": "42",
+        "config_epoch": "1",
+        "control_generation": "1",
+        "delivery_state": "pending",
+        "envelope_id": "envelope-1",
+        "envelope_sha256": "4bAzYPOjxr1StFEbwCefB7OKGxu3qyCdMYM_dhfidi8",
+        "expiry_evidence": null,
+        "issuer_config_epoch": "2",
+        "issuer_control_generation": "1",
+        "leader_term": "9007199254740993",
+        "node_id": "S1",
+        "node_signature": "JD8GCgic6YRH7L3fr3U5j_P34uZYeLVaTGZ9AyUCQLZYu8cK38ggRuSsXU3HxxUv5NcLR-w6MXT08PLhwh_1BA",
+        "not_after": "1790000060000",
+        "operation_id": "op-1",
+        "proof_config": {
+          "business_nodes": [
+            {
+              "node_id": "S1",
+              "node_incarnation": "S1-disk-1",
+              "public_url": "https://primary.example.test/",
+              "signing_public": "gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q"
+            },
+            {
+              "node_id": "S2",
+              "node_incarnation": "S2-disk-1",
+              "public_url": "https://backup.example.test/",
+              "signing_public": "7UkoxijRwsbq6QM4kFmVYSlZJzpcY_k2NsFGFKyHN9E"
+            }
+          ],
+          "cluster_id": "test-cluster",
+          "config_epoch": "1",
+          "control_generation": "1",
+          "control_node_ids": [
+            "Q",
+            "S1",
+            "S2"
+          ],
+          "issued_at": "1789999999000",
+          "not_after": "1790604800000",
+          "protocol_version": 2,
+          "signature": "0cFz2WfTUGNfTUu29XV0trXLYZnGdn0ZyQ6tnRaUANRv0pM4ZyoHlZHJPnChQyJk4GvI9SIgPYM95VFUi6eKCw"
+        },
+        "protocol_version": 2,
+        "recipient_key_id": "d9abbf012133a8b5f6235dfbde3c901a",
+        "replica_evidence": [
+          {
+            "actor_id": "ea1bd7fd065ee6efbc92ee82b1cefa4f",
+            "attempt_id": "attempt-1",
+            "cluster_id": "test-cluster",
+            "config_epoch": "1",
+            "control_generation": "1",
+            "leader_term": "9007199254740993",
+            "logical_hash": "8CZo_idGoS8IOj_idV-8KTHsLvbUkOA0rEICPeSL0is",
+            "node_id": "S1",
+            "node_incarnation": "S1-disk-1",
+            "operation_id": "op-1",
+            "payload_hash": "EnSxQ8c2edqROVVH9Lz_9vsPxGy0xXPr_OEX-ioLHos",
+            "protocol_version": 2,
+            "signature": "z5T3DYwKYZKzRmpkSBdge5GzxGir9m5DHGCC9wlK72dWIMW3_cDtO8unG_EQkIGTPl5W9zuGrqOgkXRIKMdHBg"
+          },
+          {
+            "actor_id": "ea1bd7fd065ee6efbc92ee82b1cefa4f",
+            "attempt_id": "attempt-1",
+            "cluster_id": "test-cluster",
+            "config_epoch": "1",
+            "control_generation": "1",
+            "leader_term": "9007199254740993",
+            "logical_hash": "8CZo_idGoS8IOj_idV-8KTHsLvbUkOA0rEICPeSL0is",
+            "node_id": "S2",
+            "node_incarnation": "S2-disk-1",
+            "operation_id": "op-1",
+            "payload_hash": "EnSxQ8c2edqROVVH9Lz_9vsPxGy0xXPr_OEX-ioLHos",
+            "protocol_version": 2,
+            "signature": "ym5YmI49nJSB9_gffrgxq-OMATuo8hbl7Xj9zd397yNh6WiQQM_l7RijNnn5qiTmCRqddKECtTlw9dtAfZXPBw"
+          }
+        ],
+        "sender_key_id": "ea1bd7fd065ee6efbc92ee82b1cefa4f",
+        "staged_guard_revision": null,
+        "storage_state": "replicated"
+      },
+      "kind": "CommitReceipt",
+      "name": "historical_commit_receipt",
+      "public_key": "iodf_x6zhFFXes1a_uQFRWVo3XyJ4JCGOgVXvHr0nxc",
+      "signature": "JD8GCgic6YRH7L3fr3U5j_P34uZYeLVaTGZ9AyUCQLZYu8cK38ggRuSsXU3HxxUv5NcLR-w6MXT08PLhwh_1BA",
+      "signing_bytes_b64": "RW52ZWxvcGVIQS9WMi9Db21taXRSZWNlaXB0AFsyLCJ0ZXN0LWNsdXN0ZXIiLCIxIiwiMSIsIjkwMDcxOTkyNTQ3NDA5OTMiLCI0MiIsIm9wLTEiLCJlYTFiZDdmZDA2NWVlNmVmYmM5MmVlODJiMWNlZmE0ZiIsImQ5YWJiZjAxMjEzM2E4YjVmNjIzNWRmYmRlM2M5MDFhIiwiZW52ZWxvcGUtMSIsIjRiQXpZUE9qeHIxU3RGRWJ3Q2VmQjdPS0d4dTNxeUNkTVlNX2RoZmlkaTgiLCIxNzkwMDAwMDYwMDAwIiwicmVwbGljYXRlZCIsInBlbmRpbmciLFtbWzIsInRlc3QtY2x1c3RlciIsIjEiLCIxIiwiOTAwNzE5OTI1NDc0MDk5MyIsImF0dGVtcHQtMSIsIm9wLTEiLCJlYTFiZDdmZDA2NWVlNmVmYmM5MmVlODJiMWNlZmE0ZiIsIjhDWm9faWRHb1M4SU9qX2lkVi04S1RIc0x2YlVrT0EwckVJQ1BlU0wwaXMiLCJFblN4UThjMmVkcVJPVlZIOUx6Xzl2c1B4R3kweFhQcl9PRVgtaW9MSG9zIiwiUzEiLCJTMS1kaXNrLTEiXSwiejVUM0RZd0tZWkt6Um1wa1NCZGdlNUd6eEdpcjltNURIR0NDOXdsSzcyZFdJTVczX2NEdE84dW5HX0VRa0lHVFBsNVc5enVHcnFPZ2tYUklLTWRIQmciXSxbWzIsInRlc3QtY2x1c3RlciIsIjEiLCIxIiwiOTAwNzE5OTI1NDc0MDk5MyIsImF0dGVtcHQtMSIsIm9wLTEiLCJlYTFiZDdmZDA2NWVlNmVmYmM5MmVlODJiMWNlZmE0ZiIsIjhDWm9faWRHb1M4SU9qX2lkVi04S1RIc0x2YlVrT0EwckVJQ1BlU0wwaXMiLCJFblN4UThjMmVkcVJPVlZIOUx6Xzl2c1B4R3kweFhQcl9PRVgtaW9MSG9zIiwiUzIiLCJTMi1kaXNrLTEiXSwieW01WW1JNDluSlNCOV9nZmZyZ3hxLU9NQVR1bzhoYmw3WGo5emQzOTd5Tmg2V2lRUU1fbDdSaWpObm41cWlUbUNScWRkS0VDdFRsdzlkdEFmWlhQQnciXV0sbnVsbCwiUzEiLCIxIiwiMiIsW1syLCJ0ZXN0LWNsdXN0ZXIiLCIxIiwiMSIsW1siUzEiLCJodHRwczovL3ByaW1hcnkuZXhhbXBsZS50ZXN0LyIsImdUbDNEcWg5RjE5V28xUm13MHgtek11TmlwRzA3amVpWGZZUFc0X0pzNVEiLCJTMS1kaXNrLTEiXSxbIlMyIiwiaHR0cHM6Ly9iYWNrdXAuZXhhbXBsZS50ZXN0LyIsIjdVa294aWpSd3NicTZRTTRrRm1WWVNsWkp6cGNZX2syTnNGR0ZLeUhOOUUiLCJTMi1kaXNrLTEiXV0sWyJRIiwiUzEiLCJTMiJdLCIxNzg5OTk5OTk5MDAwIiwiMTc5MDYwNDgwMDAwMCJdLCIwY0Z6MldmVFVHTmZUVXUyOVhWMHRyWExZWm5HZG4wWnlRNnRuUmFVQU5SdjBwTTRaeW9IbFpISlBuQ2hReUprNEd2STlTSWdQWU05NVZGVWk2ZUtDdyJdLG51bGxd"
+    },
+    {
+      "canonical_json": "[2,\"test-cluster\",\"1\",\"1\",\"9007199254740993\",\"42\",\"op-1\",\"ea1bd7fd065ee6efbc92ee82b1cefa4f\",\"d9abbf012133a8b5f6235dfbde3c901a\",\"envelope-1\",\"4bAzYPOjxr1StFEbwCefB7OKGxu3qyCdMYM_dhfidi8\",\"1790000060000\",\"replicated\",\"expired\",[[[2,\"test-cluster\",\"1\",\"1\",\"9007199254740993\",\"attempt-1\",\"op-1\",\"ea1bd7fd065ee6efbc92ee82b1cefa4f\",\"8CZo_idGoS8IOj_idV-8KTHsLvbUkOA0rEICPeSL0is\",\"EnSxQ8c2edqROVVH9Lz_9vsPxGy0xXPr_OEX-ioLHos\",\"S1\",\"S1-disk-1\"],\"z5T3DYwKYZKzRmpkSBdge5GzxGir9m5DHGCC9wlK72dWIMW3_cDtO8unG_EQkIGTPl5W9zuGrqOgkXRIKMdHBg\"],[[2,\"test-cluster\",\"1\",\"1\",\"9007199254740993\",\"attempt-1\",\"op-1\",\"ea1bd7fd065ee6efbc92ee82b1cefa4f\",\"8CZo_idGoS8IOj_idV-8KTHsLvbUkOA0rEICPeSL0is\",\"EnSxQ8c2edqROVVH9Lz_9vsPxGy0xXPr_OEX-ioLHos\",\"S2\",\"S2-disk-1\"],\"ym5YmI49nJSB9_gffrgxq-OMATuo8hbl7Xj9zd397yNh6WiQQM_l7RijNnn5qiTmCRqddKECtTlw9dtAfZXPBw\"]],null,\"S1\",\"1\",\"1\",null,[\"expire-operation-1\",\"1\",\"1790000060000\",\"43\",[[[2,\"test-cluster\",\"1\",\"1\",\"9007199254740993\",\"expire-attempt-1\",\"expire-operation-1\",\"system:expiry:test-cluster\",\"RCYTKk6WtGvaUzfInMhKEznkPaOCBbPgDEfGdFv_9gE\",\"WfJdaUF8Nk0CvchPI_YLOffMYQ_Tkj3rU52IOw8cj2o\",\"S1\",\"S1-disk-1\"],\"YRr9i7K2RRPTXI4epGcKdd9YjtUfcfo4jdCNpXV_Flmc7B4q4tI1H_ETEaQb3pk48ziLmuUMf6tSTdearksqDA\"],[[2,\"test-cluster\",\"1\",\"1\",\"9007199254740993\",\"expire-attempt-1\",\"expire-operation-1\",\"system:expiry:test-cluster\",\"RCYTKk6WtGvaUzfInMhKEznkPaOCBbPgDEfGdFv_9gE\",\"WfJdaUF8Nk0CvchPI_YLOffMYQ_Tkj3rU52IOw8cj2o\",\"S2\",\"S2-disk-1\"],\"6GUBBI1OX1WkY6Z09fjEDFoCZa2nM0QM2iLUPmZv2FRVTv1Mpi2FuMtqkDNV8KmQmIrhL1uc56iaj5ts0GROAQ\"]],null]]",
+      "document": {
+        "cluster_id": "test-cluster",
+        "commit_index": "42",
+        "config_epoch": "1",
+        "control_generation": "1",
+        "delivery_state": "expired",
+        "envelope_id": "envelope-1",
+        "envelope_sha256": "4bAzYPOjxr1StFEbwCefB7OKGxu3qyCdMYM_dhfidi8",
+        "expiry_evidence": {
+          "commit_index": "43",
+          "expected_object_version": "1",
+          "expired_at": "1790000060000",
+          "operation_id": "expire-operation-1",
+          "proof_config": null,
+          "replica_evidence": [
+            {
+              "actor_id": "system:expiry:test-cluster",
+              "attempt_id": "expire-attempt-1",
+              "cluster_id": "test-cluster",
+              "config_epoch": "1",
+              "control_generation": "1",
+              "leader_term": "9007199254740993",
+              "logical_hash": "RCYTKk6WtGvaUzfInMhKEznkPaOCBbPgDEfGdFv_9gE",
+              "node_id": "S1",
+              "node_incarnation": "S1-disk-1",
+              "operation_id": "expire-operation-1",
+              "payload_hash": "WfJdaUF8Nk0CvchPI_YLOffMYQ_Tkj3rU52IOw8cj2o",
+              "protocol_version": 2,
+              "signature": "YRr9i7K2RRPTXI4epGcKdd9YjtUfcfo4jdCNpXV_Flmc7B4q4tI1H_ETEaQb3pk48ziLmuUMf6tSTdearksqDA"
+            },
+            {
+              "actor_id": "system:expiry:test-cluster",
+              "attempt_id": "expire-attempt-1",
+              "cluster_id": "test-cluster",
+              "config_epoch": "1",
+              "control_generation": "1",
+              "leader_term": "9007199254740993",
+              "logical_hash": "RCYTKk6WtGvaUzfInMhKEznkPaOCBbPgDEfGdFv_9gE",
+              "node_id": "S2",
+              "node_incarnation": "S2-disk-1",
+              "operation_id": "expire-operation-1",
+              "payload_hash": "WfJdaUF8Nk0CvchPI_YLOffMYQ_Tkj3rU52IOw8cj2o",
+              "protocol_version": 2,
+              "signature": "6GUBBI1OX1WkY6Z09fjEDFoCZa2nM0QM2iLUPmZv2FRVTv1Mpi2FuMtqkDNV8KmQmIrhL1uc56iaj5ts0GROAQ"
+            }
+          ]
+        },
+        "issuer_config_epoch": "1",
+        "issuer_control_generation": "1",
+        "leader_term": "9007199254740993",
+        "node_id": "S1",
+        "node_signature": "1LHKWFx2cz4rLS6kkMae1P9kn2latMEsxJn7sw9sf9NaPz4QCGrlxZo1xLvdQYigh37kB-hHguFWXjIzppLiCA",
+        "not_after": "1790000060000",
+        "operation_id": "op-1",
+        "proof_config": null,
+        "protocol_version": 2,
+        "recipient_key_id": "d9abbf012133a8b5f6235dfbde3c901a",
+        "replica_evidence": [
+          {
+            "actor_id": "ea1bd7fd065ee6efbc92ee82b1cefa4f",
+            "attempt_id": "attempt-1",
+            "cluster_id": "test-cluster",
+            "config_epoch": "1",
+            "control_generation": "1",
+            "leader_term": "9007199254740993",
+            "logical_hash": "8CZo_idGoS8IOj_idV-8KTHsLvbUkOA0rEICPeSL0is",
+            "node_id": "S1",
+            "node_incarnation": "S1-disk-1",
+            "operation_id": "op-1",
+            "payload_hash": "EnSxQ8c2edqROVVH9Lz_9vsPxGy0xXPr_OEX-ioLHos",
+            "protocol_version": 2,
+            "signature": "z5T3DYwKYZKzRmpkSBdge5GzxGir9m5DHGCC9wlK72dWIMW3_cDtO8unG_EQkIGTPl5W9zuGrqOgkXRIKMdHBg"
+          },
+          {
+            "actor_id": "ea1bd7fd065ee6efbc92ee82b1cefa4f",
+            "attempt_id": "attempt-1",
+            "cluster_id": "test-cluster",
+            "config_epoch": "1",
+            "control_generation": "1",
+            "leader_term": "9007199254740993",
+            "logical_hash": "8CZo_idGoS8IOj_idV-8KTHsLvbUkOA0rEICPeSL0is",
+            "node_id": "S2",
+            "node_incarnation": "S2-disk-1",
+            "operation_id": "op-1",
+            "payload_hash": "EnSxQ8c2edqROVVH9Lz_9vsPxGy0xXPr_OEX-ioLHos",
+            "protocol_version": 2,
+            "signature": "ym5YmI49nJSB9_gffrgxq-OMATuo8hbl7Xj9zd397yNh6WiQQM_l7RijNnn5qiTmCRqddKECtTlw9dtAfZXPBw"
+          }
+        ],
+        "sender_key_id": "ea1bd7fd065ee6efbc92ee82b1cefa4f",
+        "staged_guard_revision": null,
+        "storage_state": "replicated"
+      },
+      "kind": "CommitReceipt",
+      "name": "expired_commit_receipt",
+      "public_key": "gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q",
+      "signature": "1LHKWFx2cz4rLS6kkMae1P9kn2latMEsxJn7sw9sf9NaPz4QCGrlxZo1xLvdQYigh37kB-hHguFWXjIzppLiCA",
+      "signing_bytes_b64": "RW52ZWxvcGVIQS9WMi9Db21taXRSZWNlaXB0AFsyLCJ0ZXN0LWNsdXN0ZXIiLCIxIiwiMSIsIjkwMDcxOTkyNTQ3NDA5OTMiLCI0MiIsIm9wLTEiLCJlYTFiZDdmZDA2NWVlNmVmYmM5MmVlODJiMWNlZmE0ZiIsImQ5YWJiZjAxMjEzM2E4YjVmNjIzNWRmYmRlM2M5MDFhIiwiZW52ZWxvcGUtMSIsIjRiQXpZUE9qeHIxU3RGRWJ3Q2VmQjdPS0d4dTNxeUNkTVlNX2RoZmlkaTgiLCIxNzkwMDAwMDYwMDAwIiwicmVwbGljYXRlZCIsImV4cGlyZWQiLFtbWzIsInRlc3QtY2x1c3RlciIsIjEiLCIxIiwiOTAwNzE5OTI1NDc0MDk5MyIsImF0dGVtcHQtMSIsIm9wLTEiLCJlYTFiZDdmZDA2NWVlNmVmYmM5MmVlODJiMWNlZmE0ZiIsIjhDWm9faWRHb1M4SU9qX2lkVi04S1RIc0x2YlVrT0EwckVJQ1BlU0wwaXMiLCJFblN4UThjMmVkcVJPVlZIOUx6Xzl2c1B4R3kweFhQcl9PRVgtaW9MSG9zIiwiUzEiLCJTMS1kaXNrLTEiXSwiejVUM0RZd0tZWkt6Um1wa1NCZGdlNUd6eEdpcjltNURIR0NDOXdsSzcyZFdJTVczX2NEdE84dW5HX0VRa0lHVFBsNVc5enVHcnFPZ2tYUklLTWRIQmciXSxbWzIsInRlc3QtY2x1c3RlciIsIjEiLCIxIiwiOTAwNzE5OTI1NDc0MDk5MyIsImF0dGVtcHQtMSIsIm9wLTEiLCJlYTFiZDdmZDA2NWVlNmVmYmM5MmVlODJiMWNlZmE0ZiIsIjhDWm9faWRHb1M4SU9qX2lkVi04S1RIc0x2YlVrT0EwckVJQ1BlU0wwaXMiLCJFblN4UThjMmVkcVJPVlZIOUx6Xzl2c1B4R3kweFhQcl9PRVgtaW9MSG9zIiwiUzIiLCJTMi1kaXNrLTEiXSwieW01WW1JNDluSlNCOV9nZmZyZ3hxLU9NQVR1bzhoYmw3WGo5emQzOTd5Tmg2V2lRUU1fbDdSaWpObm41cWlUbUNScWRkS0VDdFRsdzlkdEFmWlhQQnciXV0sbnVsbCwiUzEiLCIxIiwiMSIsbnVsbCxbImV4cGlyZS1vcGVyYXRpb24tMSIsIjEiLCIxNzkwMDAwMDYwMDAwIiwiNDMiLFtbWzIsInRlc3QtY2x1c3RlciIsIjEiLCIxIiwiOTAwNzE5OTI1NDc0MDk5MyIsImV4cGlyZS1hdHRlbXB0LTEiLCJleHBpcmUtb3BlcmF0aW9uLTEiLCJzeXN0ZW06ZXhwaXJ5OnRlc3QtY2x1c3RlciIsIlJDWVRLazZXdEd2YVV6ZkluTWhLRXpua1BhT0NCYlBnREVmR2RGdl85Z0UiLCJXZkpkYVVGOE5rMEN2Y2hQSV9ZTE9mZk1ZUV9Ua2ozclU1MklPdzhjajJvIiwiUzEiLCJTMS1kaXNrLTEiXSwiWVJyOWk3SzJSUlBUWEk0ZXBHY0tkZDlZanRVZmNmbzRqZENOcFhWX0ZsbWM3QjRxNHRJMUhfRVRFYVFiM3BrNDh6aUxtdVVNZjZ0U1RkZWFya3NxREEiXSxbWzIsInRlc3QtY2x1c3RlciIsIjEiLCIxIiwiOTAwNzE5OTI1NDc0MDk5MyIsImV4cGlyZS1hdHRlbXB0LTEiLCJleHBpcmUtb3BlcmF0aW9uLTEiLCJzeXN0ZW06ZXhwaXJ5OnRlc3QtY2x1c3RlciIsIlJDWVRLazZXdEd2YVV6ZkluTWhLRXpua1BhT0NCYlBnREVmR2RGdl85Z0UiLCJXZkpkYVVGOE5rMEN2Y2hQSV9ZTE9mZk1ZUV9Ua2ozclU1MklPdzhjajJvIiwiUzIiLCJTMi1kaXNrLTEiXSwiNkdVQkJJMU9YMVdrWTZaMDlmakVERm9DWmEybk0wUU0yaUxVUG1adjJGUlZUdjFNcGkyRnVNdHFrRE5WOEttUW1JcmhMMXVjNTZpYWo1dHMwR1JPQVEiXV0sbnVsbF1d"
+    }
+  ],
+  "warning": "Deterministic test identities only. Never use these keys in production."
+}

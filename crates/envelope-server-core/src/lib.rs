@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
 
+pub mod ha;
+
 pub const SERVER_PROTOCOL_VERSION: u16 = 1;
 pub const STATUS_OK: &str = "ok";
 pub const ENVELOPE_SUBMIT_SIGNATURE_CONTEXT: &str = "envelope server envelope submit v1";

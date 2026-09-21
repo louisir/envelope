@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'relay_ha_json.dart';
 
 const _ticketPrefix = 'envelope-p2p-tcp-v1.';
 const _protocolVersion = 1;
@@ -366,16 +367,31 @@ class AndroidP2pAck {
     required this.status,
     required this.envelopeId,
     required this.detail,
+    this.recipientResult,
+    this.recipientResults = const [],
   });
 
   final String status;
   final String envelopeId;
   final String detail;
+  final Map<String, Object?>? recipientResult;
+  final List<Map<String, Object?>> recipientResults;
 
   bool get ok => status == 'ok';
 
-  factory AndroidP2pAck.ok(String envelopeId, String detail) {
-    return AndroidP2pAck(status: 'ok', envelopeId: envelopeId, detail: detail);
+  factory AndroidP2pAck.ok(
+    String envelopeId,
+    String detail, {
+    Map<String, Object?>? recipientResult,
+    List<Map<String, Object?>> recipientResults = const [],
+  }) {
+    return AndroidP2pAck(
+      status: 'ok',
+      envelopeId: envelopeId,
+      detail: detail,
+      recipientResult: recipientResult,
+      recipientResults: recipientResults,
+    );
   }
 
   factory AndroidP2pAck.error(String envelopeId, String detail) {
@@ -387,7 +403,7 @@ class AndroidP2pAck {
   }
 
   factory AndroidP2pAck.fromJsonBytes(Uint8List bytes) {
-    final decoded = jsonDecode(utf8.decode(bytes));
+    final decoded = decodeRelayJson(utf8.decode(bytes));
     if (decoded is! Map<String, Object?>) {
       throw const AndroidP2pException('P2P ack 格式不正确。');
     }
@@ -395,6 +411,12 @@ class AndroidP2pAck {
       status: decoded['status']?.toString() ?? 'error',
       envelopeId: decoded['envelope_id']?.toString() ?? '',
       detail: decoded['detail']?.toString() ?? '',
+      recipientResult: decoded['recipient_result'] is Map
+          ? (decoded['recipient_result'] as Map).cast<String, Object?>()
+          : null,
+      recipientResults: (decoded['recipient_results'] as List? ?? const [])
+          .map((value) => (value as Map).cast<String, Object?>())
+          .toList(),
     );
   }
 
@@ -406,13 +428,25 @@ class AndroidP2pAck {
           'status': status,
           'envelope_id': envelopeId,
           'detail': detail,
+          if (recipientResult != null) ...{
+            'recipient_result': recipientResult,
+            'capabilities': ['recipient-result-v2'],
+          },
+          if (recipientResults.isNotEmpty)
+            'recipient_results': recipientResults,
         }),
       ),
     );
   }
 
   Map<String, Object?> toJson() {
-    return {'status': status, 'envelope_id': envelopeId, 'detail': detail};
+    return {
+      'status': status,
+      'envelope_id': envelopeId,
+      'detail': detail,
+      if (recipientResult != null) 'recipient_result': recipientResult,
+      if (recipientResults.isNotEmpty) 'recipient_results': recipientResults,
+    };
   }
 }
 

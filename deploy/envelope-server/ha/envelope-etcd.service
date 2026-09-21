@@ -1,0 +1,26 @@
+[Unit]
+Description=Envelope HA dedicated etcd voter
+Wants=network-online.target
+After=network-online.target envelope-ha-firewall.service
+Requires=envelope-ha-firewall.service
+
+[Service]
+Type=notify
+User=envelope-etcd
+Group=envelope-etcd
+EnvironmentFile=/etc/envelope-ha/etcd.env
+ExecStart=/opt/envelope-etcd/current/etcd
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=120
+TimeoutStopSec=60
+LimitNOFILE=65536
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/envelope-etcd
+
+[Install]
+WantedBy=multi-user.target

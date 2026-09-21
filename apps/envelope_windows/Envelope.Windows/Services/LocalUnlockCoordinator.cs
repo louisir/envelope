@@ -3,7 +3,7 @@ using Envelope.Windows.Core.Security;
 namespace Envelope.Windows.Services;
 
 /// <summary>
-/// Coalesces concurrent Windows Hello requests and records only positively
+/// Coalesces concurrent app-unlock requests and records only positively
 /// verified unlocks. A canceled or failed prompt can never be consumed as a
 /// successful resume token.
 /// </summary>

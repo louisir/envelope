@@ -1,0 +1,8 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Flutter MaterialIcons verified_user_outlined U+F47D, used for secureIdentityReady in Android main.dart.
+         Source font SHA256: d9865b671a09d683d13a863089d8825e0f61a37696ce5d7d448bc8023aa62453
+         Exact outline converted to a 24 x 24 top-left coordinate system.
+         Apache-2.0; see Licenses/materialicons_license.txt. -->
+    <Geometry x:Key="Icon.IdentityReady">F1 M12.0 0.984375 3.0 5.015625V11.015625C3.0 16.546875 6.84375 21.75 12.0 23.015625C17.15625 21.75 21.0 16.546875 21.0 11.015625V5.015625L12.0 0.984375ZM18.984375 11.015625C18.984375 15.515625 16.03125 19.6875 12.0 20.953125C7.96875 19.6875 5.015625 15.515625 5.015625 11.015625V6.28125L12.0 3.1875L18.984375 6.28125V11.015625ZM7.40625 11.578125 6.0 12.984375 9.984375 17.015625 18.0 9.0 16.59375 7.59375 9.984375 14.15625 7.40625 11.578125Z</Geometry>
+</ResourceDictionary>

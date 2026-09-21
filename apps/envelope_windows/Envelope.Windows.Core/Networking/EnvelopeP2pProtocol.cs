@@ -181,7 +181,9 @@ public sealed record EnvelopeP2pStatus(
             : null;
 }
 
-public sealed record EnvelopeP2pAck(string Status, string EnvelopeId, string Detail)
+public sealed record EnvelopeP2pAck(string Status, string EnvelopeId, string Detail,
+    string? RecipientResultJson = null,
+    IReadOnlyList<string>? RecipientResultsJson = null)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -199,7 +201,10 @@ public sealed record EnvelopeP2pAck(string Status, string EnvelopeId, string Det
 
     public byte[] ToJsonBytes() => Encoding.UTF8.GetBytes(
         JsonSerializer.Serialize(
-            new AckPayloadDto(EnvelopeProtocol.Version, Status, EnvelopeId, Detail),
+            new AckPayloadDto(EnvelopeProtocol.Version, Status, EnvelopeId, Detail,
+                RecipientResultJson is null ? null : EnvelopeHaProtocol.Element(RecipientResultJson),
+                ["recipient-result-v2"],
+                RecipientResultsJson?.Select(EnvelopeHaProtocol.Element).ToArray()),
             JsonOptions));
 
     public static EnvelopeP2pAck FromJsonBytes(ReadOnlySpan<byte> bytes)
@@ -210,10 +215,13 @@ public sealed record EnvelopeP2pAck(string Status, string EnvelopeId, string Det
                 ?? throw new JsonException("P2P acknowledgement payload is null.");
             if (payload.Version != EnvelopeProtocol.Version)
                 throw new JsonException($"Unsupported P2P acknowledgement version: {payload.Version}.");
+            if (payload.RecipientResults?.Count > 64) throw new JsonException("Too many signed results in one ACK.");
             return new EnvelopeP2pAck(
                 payload.Status ?? "error",
                 payload.EnvelopeId ?? string.Empty,
-                payload.Detail ?? string.Empty);
+                payload.Detail ?? string.Empty,
+                payload.RecipientResult is { ValueKind: JsonValueKind.Object } result ? result.GetRawText() : null,
+                payload.RecipientResults?.Select(item => item.GetRawText()).ToArray());
         }
         catch (JsonException error)
         {
@@ -225,7 +233,10 @@ public sealed record EnvelopeP2pAck(string Status, string EnvelopeId, string Det
         [property: JsonPropertyName("version")] int Version,
         [property: JsonPropertyName("status")] string? Status,
         [property: JsonPropertyName("envelope_id")] string? EnvelopeId,
-        [property: JsonPropertyName("detail")] string? Detail);
+        [property: JsonPropertyName("detail")] string? Detail,
+        [property: JsonPropertyName("recipient_result")] JsonElement? RecipientResult = null,
+        [property: JsonPropertyName("capabilities")] IReadOnlyList<string>? Capabilities = null,
+        [property: JsonPropertyName("recipient_results")] IReadOnlyList<JsonElement>? RecipientResults = null);
 }
 
 public sealed class EnvelopeP2pCooldownTracker

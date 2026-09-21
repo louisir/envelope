@@ -724,6 +724,7 @@ class AndroidMessageRecord {
     this.attachmentPath,
     this.attachmentMime,
     this.attachmentDeletedAtUnixMs,
+    this.isRead = true,
   });
 
   factory AndroidMessageRecord.fromJson(Map<Object?, Object?> json) {
@@ -751,6 +752,7 @@ class AndroidMessageRecord {
       attachmentMime: json['attachment_mime']?.toString(),
       attachmentDeletedAtUnixMs: (json['attachment_deleted_at_unix_ms'] as num?)
           ?.toInt(),
+      isRead: _jsonBool(json['is_read'], defaultValue: true),
     );
   }
 
@@ -770,6 +772,7 @@ class AndroidMessageRecord {
   final String? attachmentPath;
   final String? attachmentMime;
   final int? attachmentDeletedAtUnixMs;
+  final bool isRead;
 
   bool get isOutgoing => direction == 'outgoing';
   bool get hasTrackableIncomingCounter =>
@@ -796,6 +799,7 @@ class AndroidMessageRecord {
     String? attachmentPath,
     String? attachmentMime,
     int? attachmentDeletedAtUnixMs,
+    bool? isRead,
   }) {
     return AndroidMessageRecord(
       envelopeId: envelopeId ?? this.envelopeId,
@@ -816,6 +820,7 @@ class AndroidMessageRecord {
       attachmentMime: attachmentMime ?? this.attachmentMime,
       attachmentDeletedAtUnixMs:
           attachmentDeletedAtUnixMs ?? this.attachmentDeletedAtUnixMs,
+      isRead: isRead ?? this.isRead,
     );
   }
 
@@ -843,6 +848,7 @@ class AndroidMessageRecord {
         'attachment_mime': attachmentMime,
       if (attachmentDeletedAtUnixMs != null)
         'attachment_deleted_at_unix_ms': attachmentDeletedAtUnixMs,
+      'is_read': isRead ? 1 : 0,
     };
   }
 }
@@ -853,6 +859,9 @@ class AndroidDeliveryStatus {
   static const created = 'created';
   static const pending = 'pending';
   static const sent = 'sent';
+  static const legacySent = 'legacy_sent';
+  static const rejected = 'rejected';
+  static const expired = 'expired';
   static const serverMailbox = 'server_mailbox';
   static const received = 'received';
 }

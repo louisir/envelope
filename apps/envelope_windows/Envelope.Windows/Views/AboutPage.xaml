@@ -54,34 +54,12 @@
                                    TextWrapping="Wrap" />
                     </StackPanel>
 
-                    <Grid Grid.Column="1" Margin="36,0,4,0">
-                        <Ellipse Width="190" Height="190" Fill="{DynamicResource Brush.SidebarSelected}" />
-                        <Ellipse Width="142" Height="142" Fill="{DynamicResource Brush.Accent}" Opacity="0.95" />
-                        <Path Width="82"
-                              Height="60"
-                              Data="M 2,4 L 41,33 L 80,4 M 4,6 L 4,56 L 78,56 L 78,6"
-                              Stretch="Fill"
-                              Stroke="{DynamicResource Brush.AccentText}"
-                              StrokeEndLineCap="Round"
-                              StrokeStartLineCap="Round"
-                              StrokeThickness="3" />
-                        <Border Width="29"
-                                Height="29"
-                                Margin="0,0,44,44"
-                                HorizontalAlignment="Right"
-                                VerticalAlignment="Bottom"
-                                Background="{DynamicResource Brush.Sidebar}"
-                                BorderBrush="{DynamicResource Brush.AccentText}"
-                                BorderThickness="2"
-                                CornerRadius="15">
-                            <TextBlock HorizontalAlignment="Center"
-                                       VerticalAlignment="Center"
-                                       FontFamily="Segoe Fluent Icons"
-                                       FontSize="12"
-                                       Foreground="{DynamicResource Brush.AccentText}"
-                                       Text="&#xE72E;" />
-                        </Border>
-                    </Grid>
+                    <Image Grid.Column="1" Margin="36,0,4,0"
+                           Source="/Envelope.Windows;component/Resources/AppIcon.png"
+                           Width="160" Height="160" Stretch="Uniform"
+                           VerticalAlignment="Center" HorizontalAlignment="Center"
+                           RenderOptions.BitmapScalingMode="HighQuality"
+                           AutomationProperties.Name="Envelope" />
                 </Grid>
             </Border>
 

@@ -15,6 +15,35 @@ public sealed class ChatViewModel : PageViewModel
     private string _searchText = string.Empty;
     private string _messageText = string.Empty;
     private string? _pendingConversationId;
+    private bool _isReading;
+    private string _filter = "all";
+    private readonly Dictionary<string, string> _drafts = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _markingRead = new(StringComparer.Ordinal);
+    private string? _messageConversationId;
+
+    public bool IsReading
+    {
+        get => _isReading;
+        set
+        {
+            _isReading = value;
+            if (value && SelectedConversation is { UnreadCount: > 0 } conversation)
+                _ = MarkConversationReadAsync(conversation.Id);
+        }
+    }
+
+    public bool FilterAll { get => _filter == "all"; set { if (value) SetFilter("all"); } }
+    public bool FilterUnread { get => _filter == "unread"; set { if (value) SetFilter("unread"); } }
+    public bool FilterGroups { get => _filter == "groups"; set { if (value) SetFilter("groups"); } }
+
+    private void SetFilter(string filter)
+    {
+        _filter = filter;
+        OnPropertyChanged(nameof(FilterAll));
+        OnPropertyChanged(nameof(FilterUnread));
+        OnPropertyChanged(nameof(FilterGroups));
+        VisibleConversations.Refresh();
+    }
 
     public ChatViewModel(IEnvelopeUiService workspace, Action openContacts) : base("Chat")
     {
@@ -86,8 +115,12 @@ public sealed class ChatViewModel : PageViewModel
         get => _selectedConversation;
         set
         {
+            var previousId = _selectedConversation?.Id;
+            if (previousId is not null) _drafts[previousId] = MessageText;
             if (SetProperty(ref _selectedConversation, value))
             {
+                if (value?.Id != previousId)
+                    MessageText = value is null ? string.Empty : _drafts.GetValueOrDefault(value.Id, string.Empty);
                 RefreshMessages();
                 OnPropertyChanged(nameof(HasSelection));
                 OnPropertyChanged(nameof(CanSeal));
@@ -101,7 +134,7 @@ public sealed class ChatViewModel : PageViewModel
                 AcceptInvitationCommand.RaiseCanExecuteChanged();
                 DeclineInvitationCommand.RaiseCanExecuteChanged();
                 LoadEarlierMessagesCommand.RaiseCanExecuteChanged();
-                if (value is { UnreadCount: > 0 })
+                if (IsReading && value is { UnreadCount: > 0 })
                     _ = MarkConversationReadAsync(value.Id);
             }
         }
@@ -156,9 +189,9 @@ public sealed class ChatViewModel : PageViewModel
 
     public override void ApplySnapshot(UiWorkspaceSnapshot snapshot)
     {
-        var selectedId = _pendingConversationId ?? SelectedConversation?.Id;
+        var selectedId = _pendingConversationId ?? SelectedConversation?.Id ?? snapshot.Conversations.FirstOrDefault()?.Id;
         Conversations.Clear();
-        foreach (var item in snapshot.Conversations)
+        foreach (var item in snapshot.Conversations.OrderByDescending(item => item.LastActivity))
         {
             Conversations.Add(item);
         }
@@ -173,6 +206,8 @@ public sealed class ChatViewModel : PageViewModel
 
     public void SelectConversation(string conversationId)
     {
+        SetFilter("all");
+        SearchText = string.Empty;
         var match = Conversations.FirstOrDefault(item => item.Id == conversationId);
         if (match is not null)
         {
@@ -192,6 +227,9 @@ public sealed class ChatViewModel : PageViewModel
             return false;
         }
 
+        if (_filter == "unread" && item.UnreadCount == 0) return false;
+        if (_filter == "groups" && !item.IsGroup) return false;
+
         if (string.IsNullOrWhiteSpace(SearchText))
         {
             return true;
@@ -204,22 +242,33 @@ public sealed class ChatViewModel : PageViewModel
 
     private void RefreshMessages()
     {
-        Messages.Clear();
+        if (_messageConversationId != SelectedConversation?.Id)
+        {
+            Messages.Clear();
+            _messageConversationId = SelectedConversation?.Id;
+        }
         if (SelectedConversation is null)
         {
             return;
         }
 
-        foreach (var message in SelectedConversation.Messages.OrderBy(item => item.Timestamp))
+        var ordered = SelectedConversation.Messages.OrderBy(item => item.Timestamp).ToArray();
+        for (var index = 0; index < ordered.Length; index++)
         {
-            Messages.Add(message);
+            if (index >= Messages.Count) Messages.Add(ordered[index]);
+            else if (Messages[index] != ordered[index]) Messages[index] = ordered[index];
         }
+        while (Messages.Count > ordered.Length) Messages.RemoveAt(Messages.Count - 1);
     }
 
     private async Task MarkConversationReadAsync(string conversationId)
     {
-        await _workspace.ExecuteAsync(
-            new UiOperationRequest(UiAction.MarkConversationRead, conversationId));
+        if (!_markingRead.Add(conversationId)) return;
+        try
+        {
+            await _workspace.ExecuteAsync(new UiOperationRequest(UiAction.MarkConversationRead, conversationId));
+        }
+        finally { _markingRead.Remove(conversationId); }
     }
 
     private async Task SendAsync()
@@ -235,7 +284,9 @@ public sealed class ChatViewModel : PageViewModel
             new UiOperationRequest(UiAction.SendMessage, conversation.Id, text));
         if (result.Succeeded)
         {
-            MessageText = string.Empty;
+            _drafts[conversation.Id] = string.Empty;
+            if (SelectedConversation?.Id == conversation.Id && MessageText.Trim() == text)
+                MessageText = string.Empty;
         }
     }
 

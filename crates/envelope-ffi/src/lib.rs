@@ -3,6 +3,18 @@ use std::ffi::{CStr, CString, c_char};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::slice;
 use std::time::{SystemTime, UNIX_EPOCH};
+mod ha;
+
+/// Shared HA v2 signing and proof validation for Android and Windows.
+/// Returned strings use the same ownership/free convention as the v1 API.
+#[unsafe(no_mangle)]
+pub extern "C" fn envelope_ffi_ha_v2(request_json: *const c_char) -> *mut c_char {
+    into_response(|| {
+        let input = read_c_string(request_json, "request_json")?;
+        anyhow::ensure!(input.len() <= 32 * 1024 * 1024, "HA FFI request too large");
+        ha::dispatch(&input)
+    })
+}
 
 #[derive(Debug, Serialize)]
 struct ApiResponse<T: Serialize> {

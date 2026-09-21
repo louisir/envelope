@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\Envelope.Windows.Core\Envelope.Windows.Core.csproj" />
@@ -15,12 +15,14 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
-    <ApplicationIcon>..\..\envelope_app\windows\runner\resources\app_icon.ico</ApplicationIcon>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationIcon>Resources/AppIcon.ico</ApplicationIcon>
     <AssemblyName>Envelope.Windows</AssemblyName>
     <RootNamespace>Envelope.Windows</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
+    <None Update="envelope-ha.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="..\..\..\docs\windows-user-manual.html"
           Link="windows-user-manual.html"
           CopyToOutputDirectory="PreserveNewest"
@@ -28,6 +30,7 @@
     <None Include="THIRD-PARTY-NOTICES.md"
           CopyToOutputDirectory="PreserveNewest"
           CopyToPublishDirectory="PreserveNewest" />
+    <None Update="Licenses/materialicons_license.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="..\..\..\target\release\envelope_ffi.dll"
           Link="envelope_ffi.dll"
           Condition="Exists('..\..\..\target\release\envelope_ffi.dll')"
@@ -35,4 +38,10 @@
           CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+    <Resource Include="Resources/AppIcon.png" />
+    <Resource Include="Resources/AppIcon.ico" />
+  </ItemGroup>
 </Project>

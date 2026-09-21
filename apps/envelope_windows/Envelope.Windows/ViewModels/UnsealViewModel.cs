@@ -11,6 +11,8 @@ public sealed class UnsealViewModel : PageViewModel
     private string _envelopeBase64 = string.Empty;
     private string _selectedFileName = string.Empty;
     private bool _identityReady;
+    private string? _pendingExternalPath;
+    private int _importingPendingPath;
 
     public UnsealViewModel(IEnvelopeUiService workspace) : base("Unseal")
     {
@@ -78,6 +80,21 @@ public sealed class UnsealViewModel : PageViewModel
         }
 
         OnPropertyChanged(nameof(HasRecentEnvelopes));
+        if (IdentityReady && _pendingExternalPath is not null)
+        {
+            _ = ImportPendingExternalPathAsync();
+        }
+    }
+
+    public async Task HandleExternalPathAsync(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+
+        SelectedFileName = Path.GetFileName(path);
+        _pendingExternalPath = path;
+        if (IdentityReady)
+            await ImportPendingExternalPathAsync();
     }
 
     private async Task ChooseFileAsync()
@@ -99,6 +116,23 @@ public sealed class UnsealViewModel : PageViewModel
 
         SelectedFileName = Path.GetFileName(path);
         await _workspace.ExecuteAsync(new UiOperationRequest(UiAction.ImportEnvelopePath, Text: path));
+    }
+
+    private async Task ImportPendingExternalPathAsync()
+    {
+        if (Interlocked.Exchange(ref _importingPendingPath, 1) != 0)
+            return;
+        try
+        {
+            var path = _pendingExternalPath;
+            _pendingExternalPath = null;
+            if (!string.IsNullOrWhiteSpace(path))
+                await ImportPathAsync(path);
+        }
+        finally
+        {
+            Volatile.Write(ref _importingPendingPath, 0);
+        }
     }
 
     private async Task PasteAsync()

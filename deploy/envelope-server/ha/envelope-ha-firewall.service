@@ -1,0 +1,12 @@
+[Unit]
+Description=Envelope HA port-specific source restrictions
+After=network-pre.target
+Before=envelope-etcd.service envelope-ha.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/envelope-ha-firewall
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

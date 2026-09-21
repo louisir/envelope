@@ -16,6 +16,10 @@ public sealed class MainWindowViewModel : ObservableObject
     private PageViewModel? _currentPage;
     private int _refreshing;
     private int _refreshRequested;
+    private bool _windowReading;
+    private int _unreadCount;
+    private string _profileInitial = "E";
+    public event EventHandler<UiWorkspaceSnapshot>? SnapshotApplied;
 
     public MainWindowViewModel(
         IEnvelopeUiService workspace,
@@ -47,8 +51,11 @@ public sealed class MainWindowViewModel : ObservableObject
         };
         RefreshLocalizedText();
 
-        _selectedNavigation = NavigationItems.First(item => item.Section == NavigationSection.Contacts);
-        _currentPage = Contacts;
+        PrimaryNavigationItems = new ObservableCollection<NavigationItemViewModel>(
+            new[] { NavigationSection.Chat, NavigationSection.Contacts, NavigationSection.Unseal }
+                .Select(section => NavigationItems.First(item => item.Section == section)));
+        _selectedNavigation = NavigationItems.First(item => item.Section == NavigationSection.Chat);
+        _currentPage = Chat;
 
         _localization.LanguageChanged += (_, _) => RefreshLocalizedText();
         _workspace.StatusChanged += (_, args) =>
@@ -64,6 +71,17 @@ public sealed class MainWindowViewModel : ObservableObject
     }
 
     public ObservableCollection<NavigationItemViewModel> NavigationItems { get; }
+    public ObservableCollection<NavigationItemViewModel> PrimaryNavigationItems { get; }
+    public int UnreadCount => _unreadCount;
+    public bool HasUnread => _unreadCount > 0;
+    public string UnreadBadge => _unreadCount > 99 ? "99+" : _unreadCount.ToString();
+    public string ProfileInitial => _profileInitial;
+
+    public void SetWindowReading(bool reading)
+    {
+        _windowReading = reading;
+        Chat.IsReading = reading && CurrentPage == Chat;
+    }
 
     public AboutViewModel About { get; }
 
@@ -85,6 +103,7 @@ public sealed class MainWindowViewModel : ObservableObject
                 if (value.Section != NavigationSection.Settings)
                     Settings.ClearSensitiveInput();
                 CurrentPage = PageFor(value.Section);
+                Chat.IsReading = _windowReading && CurrentPage == Chat;
             }
         }
     }
@@ -158,11 +177,19 @@ public sealed class MainWindowViewModel : ObservableObject
 
     public void ApplySnapshot(UiWorkspaceSnapshot snapshot)
     {
+        _unreadCount = snapshot.Conversations.Sum(item => item.UnreadCount);
+        _profileInitial = string.IsNullOrWhiteSpace(snapshot.Identity?.DisplayName)
+            ? "E" : snapshot.Identity.DisplayName[..1].ToUpperInvariant();
+        OnPropertyChanged(nameof(UnreadCount));
+        OnPropertyChanged(nameof(HasUnread));
+        OnPropertyChanged(nameof(UnreadBadge));
+        OnPropertyChanged(nameof(ProfileInitial));
         About.ApplySnapshot(snapshot);
         Contacts.ApplySnapshot(snapshot);
         Chat.ApplySnapshot(snapshot);
         Unseal.ApplySnapshot(snapshot);
         Settings.ApplySnapshot(snapshot);
+        SnapshotApplied?.Invoke(this, snapshot);
     }
 
     public void NavigateTo(NavigationSection section)

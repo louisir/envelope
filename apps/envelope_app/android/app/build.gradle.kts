@@ -54,6 +54,12 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        ndk {
+            // The shipped Rust FFI is ARM64. Do not advertise dependency-only
+            // ABIs whose Flutter engine and Envelope native library are absent.
+            abiFilters.clear()
+            abiFilters += "arm64-v8a"
+        }
         buildConfigField("boolean", "ENVELOPE_ADB_BRIDGE", adbBridgeEnabled.toString())
     }
 

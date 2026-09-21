@@ -1,0 +1,28 @@
+{
+  "protocol_version": 2,
+  "cluster_id": "envelope-managed-20260920",
+  "control_generation": "1",
+  "config_epoch": "1",
+  "business_nodes": [
+    {
+      "node_id": "s1",
+      "public_url": "https://envelope.iamlouis.online",
+      "signing_public": "rxqPiM-GA9GCbNDvTGijza9NFaQtyPf3rsEkHdjKK4w",
+      "node_incarnation": "s1-disk-20260920-01"
+    },
+    {
+      "node_id": "s2",
+      "public_url": "https://npvwxzkfdqkck.work",
+      "signing_public": "pXhZ1CRBnamcsylY1XbGDYJfMPFgLlCouuFsQggwrY8",
+      "node_incarnation": "s2-disk-20260920-01"
+    }
+  ],
+  "control_node_ids": [
+    "q-gcp",
+    "s1",
+    "s2"
+  ],
+  "issued_at": "1789896033482",
+  "not_after": "1821432093482",
+  "signature": "z4ryL7xpM2PPoe0FezbBr-bTZ5ZEXNdA-1dIQy2eITx9wh0irBVu1kA_yWeZFi13Ns3MFgw0A3IpMaAu-tFSBA"
+}

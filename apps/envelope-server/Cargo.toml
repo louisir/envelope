@@ -10,6 +10,10 @@ axum.workspace = true
 clap.workspace = true
 envelope-core = { path = "../../crates/envelope-core" }
 envelope-server-core = { path = "../../crates/envelope-server-core" }
+etcd-client = { version = "=0.20.0", features = ["tls-ring"] }
+fs2.workspace = true
+sha2.workspace = true
+hex.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true

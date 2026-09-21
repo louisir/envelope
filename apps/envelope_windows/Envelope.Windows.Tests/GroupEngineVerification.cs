@@ -138,7 +138,7 @@ internal static class GroupEngineVerification
             "accepted-epoch-jump",
             InboundGroupControl(jumpedEpoch, validAcceptedMembers, "member_accepted", "bob", 20));
         await ExpectAsync<InvalidDataException>(
-            () => fixture.Engine.ImportEnvelopeAsync("accepted-epoch-jump", "bob"),
+            () => fixture.ImportEnvelopeAsync("accepted-epoch-jump", "bob"),
             "member_accepted epoch jump");
 
         var forgedGroup = acceptedGroup with { Name = "Injected", IsActive = false };
@@ -146,7 +146,7 @@ internal static class GroupEngineVerification
             "accepted-group-fields",
             InboundGroupControl(forgedGroup, validAcceptedMembers, "member_accepted", "bob", 21));
         await ExpectAsync<InvalidDataException>(
-            () => fixture.Engine.ImportEnvelopeAsync("accepted-group-fields", "bob"),
+            () => fixture.ImportEnvelopeAsync("accepted-group-fields", "bob"),
             "member_accepted group metadata injection");
 
         var ownerInjection = validAcceptedMembers.Select(member => member.KeyId == "owner"
@@ -162,7 +162,7 @@ internal static class GroupEngineVerification
             "accepted-owner-injection",
             InboundGroupControl(acceptedGroup, ownerInjection, "member_accepted", "bob", 22));
         await ExpectAsync<InvalidDataException>(
-            () => fixture.Engine.ImportEnvelopeAsync("accepted-owner-injection", "bob"),
+            () => fixture.ImportEnvelopeAsync("accepted-owner-injection", "bob"),
             "member_accepted owner state injection");
         Equal(5L, fixture.Engine.State.RequireGroup(group.GroupId).Epoch, "rejected accepted events preserve epoch");
         Equal(GroupMemberStatus.Active,
@@ -174,7 +174,7 @@ internal static class GroupEngineVerification
         fixture.Native.RegisterInbound(
             "accepted-valid",
             InboundGroupControl(acceptedGroup, validAcceptedMembers, "member_accepted", "bob", 23));
-        await fixture.Engine.ImportEnvelopeAsync("accepted-valid", "bob");
+        await fixture.ImportEnvelopeAsync("accepted-valid", "bob");
         Equal(GroupMemberStatus.Active,
             fixture.Engine.State.GroupMembers.Single(member => member.KeyId == "bob").Status,
             "valid member_accepted applies actor delta");
@@ -205,7 +205,7 @@ internal static class GroupEngineVerification
             "left-bystander-injection",
             InboundGroupControl(leftGroup, bystanderInjection, "member_left", "carol", 24));
         await ExpectAsync<InvalidDataException>(
-            () => fixture.Engine.ImportEnvelopeAsync("left-bystander-injection", "carol"),
+            () => fixture.ImportEnvelopeAsync("left-bystander-injection", "carol"),
             "member_left bystander state injection");
         Equal(GroupMemberStatus.Active,
             fixture.Engine.State.GroupMembers.Single(member => member.KeyId == "erin").Status,
@@ -214,7 +214,7 @@ internal static class GroupEngineVerification
         fixture.Native.RegisterInbound(
             "left-valid",
             InboundGroupControl(leftGroup, validLeftMembers, "member_left", "carol", 25));
-        await fixture.Engine.ImportEnvelopeAsync("left-valid", "carol");
+        await fixture.ImportEnvelopeAsync("left-valid", "carol");
         Equal(GroupMemberStatus.Left,
             fixture.Engine.State.GroupMembers.Single(member => member.KeyId == "carol").Status,
             "valid member_left applies only actor delta");
@@ -255,7 +255,7 @@ internal static class GroupEngineVerification
                 26,
                 removeExtra));
         await ExpectAsync<InvalidDataException>(
-            () => fixture.Engine.ImportEnvelopeAsync("removed-bystander-injection", "owner"),
+            () => fixture.ImportEnvelopeAsync("removed-bystander-injection", "owner"),
             "member_removed bystander state injection");
         Equal(GroupMemberStatus.Active,
             fixture.Engine.State.GroupMembers.Single(member => member.KeyId == "dave").Status,
@@ -264,7 +264,7 @@ internal static class GroupEngineVerification
         fixture.Native.RegisterInbound(
             "removed-valid",
             InboundGroupControl(removedGroup, validRemovedMembers, "member_removed", "owner", 27, removeExtra));
-        await fixture.Engine.ImportEnvelopeAsync("removed-valid", "owner");
+        await fixture.ImportEnvelopeAsync("removed-valid", "owner");
         Equal(GroupMemberStatus.Removed,
             fixture.Engine.State.GroupMembers.Single(member => member.KeyId == "bob").Status,
             "valid member_removed applies only target delta");
@@ -378,7 +378,7 @@ internal static class GroupEngineVerification
 
         var firstEnvelope = firstActor == "bob" ? "fork-bob" : "fork-carol";
         var secondEnvelope = firstActor == "bob" ? "fork-carol" : "fork-bob";
-        await fixture.Engine.ImportEnvelopeAsync(firstEnvelope, firstActor);
+        await fixture.ImportEnvelopeAsync(firstEnvelope, firstActor);
         if (injectBystander)
         {
             var injected = carolMembers.Select(member => member.KeyId == "owner"
@@ -389,12 +389,12 @@ internal static class GroupEngineVerification
                 "fork-injected",
                 InboundGroupControl(carolGroup, injected, "member_accepted", "carol", 42));
             await ExpectAsync<InvalidDataException>(
-                () => fixture.Engine.ImportEnvelopeAsync("fork-injected", "carol"),
+                () => fixture.ImportEnvelopeAsync("fork-injected", "carol"),
                 "concurrent accepted fork rejects bystander injection");
             Require(fixture.Engine.State.ReceivedCounters.All(item => item.MessageCounter != 42),
                 "rejected concurrent fork does not consume counter");
         }
-        await fixture.Engine.ImportEnvelopeAsync(secondEnvelope, firstActor == "bob" ? "carol" : "bob");
+        await fixture.ImportEnvelopeAsync(secondEnvelope, firstActor == "bob" ? "carol" : "bob");
 
         var stored = fixture.Engine.State.GroupMembers.Where(item => item.GroupId == group.GroupId)
             .OrderBy(item => item.KeyId)
@@ -438,13 +438,13 @@ internal static class GroupEngineVerification
                 validInnerSignature: true));
         if (acceptFirst)
         {
-            await fixture.Engine.ImportEnvelopeAsync("mixed-accepted", "bob");
-            await fixture.Engine.ImportEnvelopeAsync("mixed-endorsed", "carol");
+            await fixture.ImportEnvelopeAsync("mixed-accepted", "bob");
+            await fixture.ImportEnvelopeAsync("mixed-endorsed", "carol");
         }
         else
         {
-            await fixture.Engine.ImportEnvelopeAsync("mixed-endorsed", "carol");
-            await fixture.Engine.ImportEnvelopeAsync("mixed-accepted", "bob");
+            await fixture.ImportEnvelopeAsync("mixed-endorsed", "carol");
+            await fixture.ImportEnvelopeAsync("mixed-accepted", "bob");
         }
         var stored = fixture.Engine.State.GroupMembers.Where(item => item.GroupId == group.GroupId)
             .OrderBy(item => item.KeyId)
@@ -511,7 +511,7 @@ internal static class GroupEngineVerification
         EnvelopeImportResult imported;
         try
         {
-            imported = await fixture.Engine.ImportEnvelopeAsync("dart-unicode-vector", "bob");
+            imported = await fixture.ImportEnvelopeAsync("dart-unicode-vector", "bob");
         }
         catch (InvalidDataException)
         {
@@ -576,8 +576,8 @@ internal static class GroupEngineVerification
 
         if (ownerFirst)
         {
-            await fixture.Engine.ImportEnvelopeAsync("causal-rename", "owner");
-            await fixture.Engine.ImportEnvelopeAsync("causal-avatar", "owner");
+            await fixture.ImportEnvelopeAsync("causal-rename", "owner");
+            await fixture.ImportEnvelopeAsync("causal-avatar", "owner");
 
             var injected = acceptedMembers.Select(member => member.KeyId == "carol"
                     ? member with
@@ -598,11 +598,11 @@ internal static class GroupEngineVerification
                     73,
                     eventId: "causal-injected"));
             await ExpectAsync<InvalidDataException>(
-                () => fixture.Engine.ImportEnvelopeAsync("causal-injected", "bob"),
+                () => fixture.ImportEnvelopeAsync("causal-injected", "bob"),
                 "stale accepted fork rejects bystander injection");
             Require(fixture.Engine.State.ReceivedCounters.All(item => item.MessageCounter != 73),
                 "rejected stale bystander injection does not consume counter");
-            await fixture.Engine.ImportEnvelopeAsync("causal-accept", "bob");
+            await fixture.ImportEnvelopeAsync("causal-accept", "bob");
 
             var acceptedEventCount = fixture.Engine.State.GroupEvents.Count(item => item.EventId == "causal-accept");
             fixture.Native.RegisterInbound(
@@ -614,16 +614,16 @@ internal static class GroupEngineVerification
                     "bob",
                     74,
                     eventId: "causal-accept"));
-            await fixture.Engine.ImportEnvelopeAsync("causal-accept-replay", "bob");
+            await fixture.ImportEnvelopeAsync("causal-accept-replay", "bob");
             Equal(acceptedEventCount,
                 fixture.Engine.State.GroupEvents.Count(item => item.EventId == "causal-accept"),
                 "event_id replay is idempotent");
         }
         else
         {
-            await fixture.Engine.ImportEnvelopeAsync("causal-accept", "bob");
-            await fixture.Engine.ImportEnvelopeAsync("causal-rename", "owner");
-            await fixture.Engine.ImportEnvelopeAsync("causal-avatar", "owner");
+            await fixture.ImportEnvelopeAsync("causal-accept", "bob");
+            await fixture.ImportEnvelopeAsync("causal-rename", "owner");
+            await fixture.ImportEnvelopeAsync("causal-avatar", "owner");
         }
 
         var storedGroup = fixture.Engine.State.RequireGroup(group.GroupId);
@@ -682,14 +682,14 @@ internal static class GroupEngineVerification
                 eventId: "accept-remove-removed"));
         if (acceptFirst)
         {
-            await fixture.Engine.ImportEnvelopeAsync("accept-remove-accepted", "bob");
-            await fixture.Engine.ImportEnvelopeAsync("accept-remove-removed", "owner");
+            await fixture.ImportEnvelopeAsync("accept-remove-accepted", "bob");
+            await fixture.ImportEnvelopeAsync("accept-remove-removed", "owner");
         }
         else
         {
-            await fixture.Engine.ImportEnvelopeAsync("accept-remove-removed", "owner");
+            await fixture.ImportEnvelopeAsync("accept-remove-removed", "owner");
             await ExpectAsync<InvalidDataException>(
-                () => fixture.Engine.ImportEnvelopeAsync("accept-remove-accepted", "bob"),
+                () => fixture.ImportEnvelopeAsync("accept-remove-accepted", "bob"),
                 "owner removal prevents a concurrent stale acceptance from reactivating target");
             Require(fixture.Engine.State.ReceivedCounters.All(item => item.MessageCounter != 88),
                 "rejected post-removal acceptance does not consume counter");
@@ -748,13 +748,13 @@ internal static class GroupEngineVerification
                 eventId: "accept-invite-invited"));
         if (acceptFirst)
         {
-            await fixture.Engine.ImportEnvelopeAsync("accept-invite-accepted", "bob");
-            await fixture.Engine.ImportEnvelopeAsync("accept-invite-invited", "owner");
+            await fixture.ImportEnvelopeAsync("accept-invite-accepted", "bob");
+            await fixture.ImportEnvelopeAsync("accept-invite-invited", "owner");
         }
         else
         {
-            await fixture.Engine.ImportEnvelopeAsync("accept-invite-invited", "owner");
-            await fixture.Engine.ImportEnvelopeAsync("accept-invite-accepted", "bob");
+            await fixture.ImportEnvelopeAsync("accept-invite-invited", "owner");
+            await fixture.ImportEnvelopeAsync("accept-invite-accepted", "bob");
         }
         var storedGroup = fixture.Engine.State.RequireGroup(group.GroupId);
         var bob = fixture.Engine.State.GroupMembers.Single(item => item.KeyId == "bob");
@@ -792,8 +792,8 @@ internal static class GroupEngineVerification
             fixture.Native.RegisterInbound(
                 "left-avatar",
                 InboundGroupControl(avatar, baseline, "group_avatar_updated", "owner", 76));
-            await fixture.Engine.ImportEnvelopeAsync("left-rename", "owner");
-            await fixture.Engine.ImportEnvelopeAsync("left-avatar", "owner");
+            await fixture.ImportEnvelopeAsync("left-rename", "owner");
+            await fixture.ImportEnvelopeAsync("left-avatar", "owner");
 
             var leftGroup = group with { Epoch = 2, UpdatedAtUnixMs = 2_400 };
             var leftMembers = baseline.Select(member => member.KeyId == "carol"
@@ -808,7 +808,7 @@ internal static class GroupEngineVerification
             fixture.Native.RegisterInbound(
                 "stale-left",
                 InboundGroupControl(leftGroup, leftMembers, "member_left", "carol", 77));
-            await fixture.Engine.ImportEnvelopeAsync("stale-left", "carol");
+            await fixture.ImportEnvelopeAsync("stale-left", "carol");
             Equal(GroupMemberStatus.Left,
                 fixture.Engine.State.GroupMembers.Single(item => item.KeyId == "carol").Status,
                 "causal stale member_left applies actor delta");
@@ -838,8 +838,8 @@ internal static class GroupEngineVerification
             fixture.Native.RegisterInbound(
                 "endorse-avatar",
                 InboundGroupControl(avatar, baseline, "group_avatar_updated", "owner", 79));
-            await fixture.Engine.ImportEnvelopeAsync("endorse-rename", "owner");
-            await fixture.Engine.ImportEnvelopeAsync("endorse-avatar", "owner");
+            await fixture.ImportEnvelopeAsync("endorse-rename", "owner");
+            await fixture.ImportEnvelopeAsync("endorse-avatar", "owner");
 
             var endorsedGroup = group with { Epoch = 3, UpdatedAtUnixMs = 2_800 };
             var injected = baseline.Select(member => member.KeyId == "owner"
@@ -856,7 +856,7 @@ internal static class GroupEngineVerification
                     80,
                     validInnerSignature: true));
             await ExpectAsync<InvalidDataException>(
-                () => fixture.Engine.ImportEnvelopeAsync("stale-endorse-injected", "carol"),
+                () => fixture.ImportEnvelopeAsync("stale-endorse-injected", "carol"),
                 "stale endorsement rejects bystander injection");
             Require(fixture.Engine.State.ReceivedCounters.All(item => item.MessageCounter != 80),
                 "rejected stale endorsement does not consume counter");
@@ -870,7 +870,7 @@ internal static class GroupEngineVerification
                     "carol",
                     81,
                     validInnerSignature: true));
-            await fixture.Engine.ImportEnvelopeAsync("stale-endorse", "carol");
+            await fixture.ImportEnvelopeAsync("stale-endorse", "carol");
             Equal(GroupMemberStatus.Active,
                 fixture.Engine.State.GroupMembers.Single(item => item.KeyId == "candidate").Status,
                 "causal stale endorsement participates in consensus admission");
@@ -901,7 +901,7 @@ internal static class GroupEngineVerification
         fixture.Native.RegisterInbound(
             "message-remove-rename",
             InboundGroupControl(renamed, baseline, "group_renamed", "owner", 84));
-        await fixture.Engine.ImportEnvelopeAsync("message-remove-rename", "owner");
+        await fixture.ImportEnvelopeAsync("message-remove-rename", "owner");
 
         var removedGroup = renamed with { Epoch = 3, UpdatedAtUnixMs = 3_000 };
         var removedMembers = baseline.Select(member => member.KeyId == "bob"
@@ -922,7 +922,7 @@ internal static class GroupEngineVerification
                 "owner",
                 85,
                 new Dictionary<string, object?> { ["target_key_id"] = "bob" }));
-        await fixture.Engine.ImportEnvelopeAsync("message-remove-bob", "owner");
+        await fixture.ImportEnvelopeAsync("message-remove-bob", "owner");
 
         fixture.Native.RegisterInbound(
             "message-after-remove",
@@ -935,7 +935,7 @@ internal static class GroupEngineVerification
                 new Dictionary<string, object?> { ["text"] = "forged stale after removal" },
                 eventId: "post-removal-stale"));
         await ExpectAsync<InvalidDataException>(
-            () => fixture.Engine.ImportEnvelopeAsync("message-after-remove", "bob"),
+            () => fixture.ImportEnvelopeAsync("message-after-remove", "bob"),
             "removed member cannot backdate a newly signed stale group_message");
         Require(fixture.Engine.State.ReceivedCounters.All(item => item.MessageCounter != 86),
             "rejected post-removal stale message does not consume counter");
@@ -970,13 +970,13 @@ internal static class GroupEngineVerification
                 eventId: "stale-message"));
         if (ownerFirst)
         {
-            await fixture.Engine.ImportEnvelopeAsync("message-rename", "owner");
-            await fixture.Engine.ImportEnvelopeAsync("stale-message", "bob");
+            await fixture.ImportEnvelopeAsync("message-rename", "owner");
+            await fixture.ImportEnvelopeAsync("stale-message", "bob");
         }
         else
         {
-            await fixture.Engine.ImportEnvelopeAsync("stale-message", "bob");
-            await fixture.Engine.ImportEnvelopeAsync("message-rename", "owner");
+            await fixture.ImportEnvelopeAsync("stale-message", "bob");
+            await fixture.ImportEnvelopeAsync("message-rename", "owner");
         }
         Require(fixture.Engine.State.Messages.Any(item => item.Text == "delayed group text"),
             "stale group message is accepted while actor and self remain active");
@@ -1056,7 +1056,7 @@ internal static class GroupEngineVerification
                 57,
                 recipientKeyId: "bob"));
         await ExpectAsync<InvalidDataException>(
-            () => fixture.Engine.ImportEnvelopeAsync("initial-wrong-epoch", "owner"),
+            () => fixture.ImportEnvelopeAsync("initial-wrong-epoch", "owner"),
             "initial invite epoch must be one");
         fixture.Native.RegisterInbound(
             "initial-wrong-inviter",
@@ -1068,7 +1068,7 @@ internal static class GroupEngineVerification
                 58,
                 recipientKeyId: "bob"));
         await ExpectAsync<InvalidDataException>(
-            () => fixture.Engine.ImportEnvelopeAsync("initial-wrong-inviter", "owner"),
+            () => fixture.ImportEnvelopeAsync("initial-wrong-inviter", "owner"),
             "initial invite requires canonical inviter");
         fixture.Native.RegisterInbound(
             "initial-wrong-updated",
@@ -1080,7 +1080,7 @@ internal static class GroupEngineVerification
                 59,
                 recipientKeyId: "bob"));
         await ExpectAsync<InvalidDataException>(
-            () => fixture.Engine.ImportEnvelopeAsync("initial-wrong-updated", "owner"),
+            () => fixture.ImportEnvelopeAsync("initial-wrong-updated", "owner"),
             "initial invite requires canonical member timestamp");
         fixture.Native.RegisterInbound(
             "initial-forged",
@@ -1092,7 +1092,7 @@ internal static class GroupEngineVerification
                 60,
                 recipientKeyId: "bob"));
         await ExpectAsync<InvalidDataException>(
-            () => fixture.Engine.ImportEnvelopeAsync("initial-forged", "owner"),
+            () => fixture.ImportEnvelopeAsync("initial-forged", "owner"),
             "initial invite rejects active verified bystander");
         Require(fixture.Engine.State.Groups.Count == 0, "forged initial invite creates no group");
         Require(fixture.Engine.State.ReceivedCounters.All(item => item.MessageCounter is not (57 or 58 or 59 or 60)),
@@ -1107,7 +1107,7 @@ internal static class GroupEngineVerification
                 "owner",
                 61,
                 recipientKeyId: "bob"));
-        await fixture.Engine.ImportEnvelopeAsync("initial-valid", "owner");
+        await fixture.ImportEnvelopeAsync("initial-valid", "owner");
         Equal(GroupTrustState.Inviter, LocalMember(fixture, "owner").TrustState,
             "initial invite owner is locally recorded as inviter");
         Equal(GroupTrustState.Verified, LocalMember(fixture, "bob").TrustState,
@@ -1132,7 +1132,7 @@ internal static class GroupEngineVerification
         fixture.Native.RegisterInbound(
             "carol-self-verified",
             InboundGroupControl(acceptedGroup, remoteMembers, "member_accepted", "carol", 62, recipientKeyId: "bob"));
-        await fixture.Engine.ImportEnvelopeAsync("carol-self-verified", "carol");
+        await fixture.ImportEnvelopeAsync("carol-self-verified", "carol");
         Equal(GroupTrustState.Unverified, LocalMember(fixture, "carol").TrustState,
             "remote member_accepted cannot self-report local Verified trust");
         Require(!GroupRules.MessageRecipients(
@@ -1151,14 +1151,14 @@ internal static class GroupEngineVerification
             recipientKeyId: "bob");
         fixture.Native.RegisterInbound("untrusted-group-message", untrustedMessage);
         await ExpectAsync<InvalidDataException>(
-            () => fixture.Engine.ImportEnvelopeAsync("untrusted-group-message", "carol"),
+            () => fixture.ImportEnvelopeAsync("untrusted-group-message", "carol"),
             "untrusted active member cannot send verified-group text");
         Require(fixture.Engine.State.ReceivedCounters.All(item => item.MessageCounter != 64),
             "rejected untrusted group text does not consume counter");
         var groupFileManifest = InboundGroupFileManifest(acceptedGroup, "carol", "bob", 65);
         fixture.Native.RegisterInbound("untrusted-group-file", groupFileManifest);
         await ExpectAsync<InvalidDataException>(
-            () => fixture.Engine.ImportEnvelopeAsync("untrusted-group-file", "carol"),
+            () => fixture.ImportEnvelopeAsync("untrusted-group-file", "carol"),
             "untrusted active member cannot send verified-group file");
         Require(fixture.Engine.State.ReceivedCounters.All(item => item.MessageCounter != 65),
             "rejected untrusted group file does not consume counter");
@@ -1172,13 +1172,13 @@ internal static class GroupEngineVerification
                 "bob").Any(item => item.KeyId == "carol"),
             "locally trusted verified-group member is eligible for messages and files");
         fixture.Native.RegisterInbound("trusted-group-message", untrustedMessage);
-        var trustedMessage = await fixture.Engine.ImportEnvelopeAsync("trusted-group-message", "carol");
+        var trustedMessage = await fixture.ImportEnvelopeAsync("trusted-group-message", "carol");
         Equal("must be locally trusted", trustedMessage.Message.Text,
             "same verified-group text imports after local trust");
         Equal(1, fixture.Engine.State.ReceivedCounters.Count(item => item.MessageCounter == 64),
             "trusted retry records counter exactly once");
         fixture.Native.RegisterInbound("trusted-group-file", groupFileManifest);
-        await fixture.Engine.ImportEnvelopeAsync("trusted-group-file", "carol");
+        await fixture.ImportEnvelopeAsync("trusted-group-file", "carol");
         Require(fixture.Engine.State.InboundFileTransfers.Any(item =>
                 item.TransferId == "verified-trust-empty" && item.SenderKeyId == "carol"),
             "same verified-group file manifest imports after local trust");
@@ -1191,7 +1191,7 @@ internal static class GroupEngineVerification
         fixture.Native.RegisterInbound(
             "remote-trust-reset",
             InboundGroupControl(acceptedGroup, messageSnapshot, "group_message", "owner", 63, recipientKeyId: "bob"));
-        await fixture.Engine.ImportEnvelopeAsync("remote-trust-reset", "owner");
+        await fixture.ImportEnvelopeAsync("remote-trust-reset", "owner");
         Equal(GroupTrustState.Verified, LocalMember(fixture, "carol").TrustState,
             "wire trust differences neither reject nor overwrite local trust");
         await fixture.Engine.SetGroupMemberLocalTrustAsync(group.GroupId, "carol", trusted: false);
@@ -1250,7 +1250,7 @@ internal static class GroupEngineVerification
                 70,
                 new Dictionary<string, object?> { ["text"] = "consensus trust remains local" },
                 recipientKeyId: "carol"));
-        await fixture.Engine.ImportEnvelopeAsync("consensus-local-trust-difference", "bob");
+        await fixture.ImportEnvelopeAsync("consensus-local-trust-difference", "bob");
         Equal(GroupTrustState.Verified,
             fixture.Engine.State.GroupMembers.Single(member => member.KeyId == "candidate").TrustState,
             "consensus local verification tolerates remote admitted wire state without overwrite");
@@ -1281,7 +1281,7 @@ internal static class GroupEngineVerification
             "candidate-not-accepted-locally",
             InboundGroupEnvelope(incomingGroup, members, "candidate", "carol", 9, validInnerSignature: true));
         await ExpectAsync<InvalidDataException>(
-            () => fixture.Engine.ImportEnvelopeAsync("candidate-not-accepted-locally", "carol"),
+            () => fixture.ImportEnvelopeAsync("candidate-not-accepted-locally", "carol"),
             "sender snapshot cannot pre-accept candidate");
         Require(fixture.Engine.State.ReceivedCounters.All(item => item.MessageCounter != 9),
             "pre-accept endorsement does not consume message counter");
@@ -1298,7 +1298,7 @@ internal static class GroupEngineVerification
             "bad-inner-signature",
             InboundGroupEnvelope(incomingGroup, acceptedMembers, "candidate", "carol", 10, validInnerSignature: false));
         await ExpectAsync<InvalidDataException>(
-            () => fixture.Engine.ImportEnvelopeAsync("bad-inner-signature", "carol"),
+            () => fixture.ImportEnvelopeAsync("bad-inner-signature", "carol"),
             "tampered inner endorsement signature");
         Equal(2L, fixture.Engine.State.RequireGroup(group.GroupId).Epoch,
             "rejected endorsement does not update group epoch");
@@ -1308,7 +1308,7 @@ internal static class GroupEngineVerification
         fixture.Native.RegisterInbound(
             "valid-inner-signature",
             InboundGroupEnvelope(incomingGroup, acceptedMembers, "candidate", "carol", 10, validInnerSignature: true));
-        await fixture.Engine.ImportEnvelopeAsync("valid-inner-signature", "carol");
+        await fixture.ImportEnvelopeAsync("valid-inner-signature", "carol");
 
         var admitted = fixture.Engine.State.GroupMembers.Single(member => member.KeyId == "candidate");
         Equal(GroupMemberStatus.Active, admitted.Status, "valid incoming endorsement admits candidate");
@@ -1622,6 +1622,9 @@ internal static class GroupEngineVerification
         public FakeNative Native { get; }
         public MemoryStateStore Store { get; }
 
+        public Task<EnvelopeImportResult> ImportEnvelopeAsync(string fixtureLabel, string? sender = null) =>
+            Engine.ImportEnvelopeAsync(Base64Url(Encoding.UTF8.GetBytes(fixtureLabel)), sender);
+
         public static async Task<GroupFixture> CreateAsync(string identityKeyId)
         {
             var root = Path.Combine(Path.GetTempPath(), "Envelope.Windows.GroupTests", Guid.NewGuid().ToString("N"));
@@ -1714,7 +1717,8 @@ internal static class GroupEngineVerification
         public List<string> VerifiedPayloads { get; } = [];
         public List<ulong> EncryptedCounters { get; } = [];
 
-        public void RegisterInbound(string encoded, InboundOpaquePayloadSummary payload) => _inbound[encoded] = payload;
+        public void RegisterInbound(string encoded, InboundOpaquePayloadSummary payload) =>
+            _inbound[Base64Url(Encoding.UTF8.GetBytes(encoded))] = payload;
 
         public static string Sign(string keyId, string context, string payload) =>
             Base64Url(SHA256.HashData(Encoding.UTF8.GetBytes($"{keyId}\n{context}\n{payload}")));

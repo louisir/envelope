@@ -31,7 +31,10 @@ Thumbs.db
 
 # .NET / WPF
 **/bin/
+!apps/envelope-server/src/bin/
+!apps/envelope-server/src/bin/*.rs
 **/obj/
+**/*_wpftmp.csproj
 *.user
 *.suo
 *.userosscache
@@ -52,6 +55,8 @@ Thumbs.db
 **/android/app/src/main/jniLibs/**/*.so
 
 # Signing material
+/keys/
+/.local-secrets/
 **/key.properties
 **/android/signing/
 **/*.jks
@@ -62,8 +67,5 @@ Thumbs.db
 
 # Local server runtime / deployment overrides
 /envelope-server.sqlite3*
-/deploy/envelope-server/*.env
-!/deploy/envelope-server/*.env.example
-
-# Local release bundles / generated packages
-/target/portable/
+/deploy/envelope-server/**/*.env
+!/deploy/envelope-server/**/*.env.example

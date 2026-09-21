@@ -71,9 +71,11 @@ public sealed class SettingsViewModel : PageViewModel
         ClearFileCacheCommand = new AsyncRelayCommand(_ => ExecuteAsync(UiAction.ClearFileCache));
         ExportDiagnosticsCommand = new AsyncRelayCommand(_ => ExecuteAsync(UiAction.ExportDiagnostics));
         ClearDiagnosticsCommand = new AsyncRelayCommand(_ => ExecuteAsync(UiAction.ClearDiagnostics));
+        ChangeUnlockCodeCommand = new AsyncRelayCommand(_ => ExecuteAsync(UiAction.ChangeUnlockCode));
     }
 
     public ObservableCollection<string> BackupIntervals { get; }
+    public AsyncRelayCommand ChangeUnlockCodeCommand { get; }
 
     public ObservableCollection<string> BackupRetentions { get; }
 

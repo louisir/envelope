@@ -293,7 +293,8 @@ public sealed class EnvelopeServerClient : IDisposable
                         _cachedManifest = manifest;
                     }
 
-                    _lastUsedBaseUri = candidate;
+                    // Directory transport success does not select the active
+                    // business endpoint or establish leadership.
                     return accepted;
                 }
                 catch (Exception error) when (
@@ -555,6 +556,7 @@ public sealed class EnvelopeServerClient : IDisposable
         var handler = new SocketsHttpHandler
         {
             ConnectTimeout = DefaultConnectionTimeout,
+            AllowAutoRedirect = false,
         };
         return new HttpClient(handler, disposeHandler: true)
         {

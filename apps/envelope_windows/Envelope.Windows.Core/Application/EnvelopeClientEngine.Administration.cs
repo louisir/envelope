@@ -163,6 +163,7 @@ public sealed partial class EnvelopeClientEngine
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             foreach (var pending in _state.PendingEnvelopes.ToArray())
             {
+                if (pending.Ha?.DeliveryState is HaDeliveryState.Delivered or HaDeliveryState.Rejected or HaDeliveryState.Expired) continue;
                 if (pending.DeliveryState is not (DeliveryState.Pending or DeliveryState.Failed)) continue;
                 if (pending.NextAttemptAtUnixMs is > 0 && pending.NextAttemptAtUnixMs > now) continue;
                 var contact = ResolvePendingRecipient(pending);

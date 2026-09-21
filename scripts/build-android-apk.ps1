@@ -82,7 +82,7 @@ if (-not $SkipFfiBuild) {
 }
 
 if ([string]::IsNullOrWhiteSpace($AppVersion)) {
-    $AppVersion = "v1.0.0.$((Get-Date).ToString("yyyyMMddHHmmss.fff"))"
+    $AppVersion = "v1.0.1.$((Get-Date).ToString("yyyyMMddHHmmss.fff"))"
 }
 
 if ([string]::IsNullOrWhiteSpace($BuildName)) {
@@ -94,7 +94,7 @@ if ([string]::IsNullOrWhiteSpace($BuildName)) {
         $BuildName = $Matches[1]
     }
     else {
-        $BuildName = "1.0.0"
+        $BuildName = "1.0.1"
     }
 }
 

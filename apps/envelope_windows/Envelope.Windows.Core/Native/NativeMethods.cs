@@ -7,6 +7,9 @@ internal static class NativeMethods
 {
     internal const string LibraryName = "envelope_ffi";
 
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "envelope_ffi_ha_v2")]
+    internal static extern IntPtr HaV2(IntPtr requestJson);
+
     private static readonly object ConfigurationLock = new();
     private static string? _preferredLibraryPath;
 

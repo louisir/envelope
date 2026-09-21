@@ -206,7 +206,7 @@ public sealed partial class EnvelopeClientEngine
                     stagedMessage,
                     mutationSnapshot)
                 .ConfigureAwait(false);
-            var message = stagedMessage with
+            var message = (_state.Messages.FirstOrDefault(item => item.EnvelopeId == stagedMessage.EnvelopeId) ?? stagedMessage) with
             {
                 DeliveryState = AggregateLogicalDeliveryStateCore(logicalMessageId),
                 DeliveryDetail = string.Join(Environment.NewLine, details),

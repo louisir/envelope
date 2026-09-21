@@ -1,6 +1,7 @@
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use envelope_server_core::NodeSetManifest;
+use envelope_server_core::ha::{ClusterConfigV2, HaSigned};
 use std::{
     fs::OpenOptions,
     io::Write,
@@ -33,6 +34,14 @@ enum Command {
         #[arg(long)]
         out: PathBuf,
     },
+    SignHaConfig {
+        #[arg(long)]
+        config: PathBuf,
+        #[arg(long)]
+        signing_secret_file: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
+    },
 }
 
 fn main() -> Result<()> {
@@ -47,6 +56,13 @@ fn main() -> Result<()> {
             signing_secret_file,
             out,
         } => sign_manifest(&manifest, &signing_secret_file, &out),
+        Command::SignHaConfig { config, signing_secret_file, out } => {
+            let mut config: ClusterConfigV2 = serde_json::from_slice(&std::fs::read(config)?)?;
+            config.validate()?;
+            config.sign(&read_secret_file(&signing_secret_file)?)?;
+            std::fs::write(out, serde_json::to_vec_pretty(&config)?)?;
+            Ok(())
+        },
     }
 }
 

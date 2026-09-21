@@ -28,6 +28,8 @@ public sealed partial class EnvelopeClientEngine
     {
         EnsureInitialized();
         await EnsureP2pListeningAsync(cancellationToken).ConfigureAwait(false);
+        if (_haTrust is not null)
+            return await PublishHaIntroAsync(ttlSeconds, cancellationToken).ConfigureAwait(false);
 
         IntroBundleSummary ownerBundle;
         string configuredUrl;
@@ -84,6 +86,8 @@ public sealed partial class EnvelopeClientEngine
         var normalizedServerUrl = RequireIntroServerUrl(serverUrl);
         EnsureInitialized();
         await EnsureP2pListeningAsync(cancellationToken).ConfigureAwait(false);
+        if (_haTrust is not null)
+            return await RespondHaIntroAsync(sessionId, normalizedServerUrl, ttlSeconds, cancellationToken).ConfigureAwait(false);
 
         IntroBundleSummary responderBundle;
         string responderKeyId;
@@ -132,6 +136,8 @@ public sealed partial class EnvelopeClientEngine
         ValidateIntroSessionId(sessionId);
         var normalizedServerUrl = RequireIntroServerUrl(serverUrl);
         EnsureInitialized();
+        if (_haTrust is not null)
+            return await PollHaIntroAsync(sessionId, normalizedServerUrl, cancellationToken).ConfigureAwait(false);
         var ownerKeyId = await ReadStateAsync(
             state => state.Identity?.KeyId ?? throw new InvalidOperationException("尚未创建或恢复身份。"),
             cancellationToken).ConfigureAwait(false);

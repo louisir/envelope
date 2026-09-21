@@ -46,7 +46,10 @@ import org.json.JSONObject
 class MainActivity : FlutterFragmentActivity() {
     private val channelName = "com.iamlouis.envelope/secure_store"
     private val adbBridgeChannelName = "com.iamlouis.envelope/adb_bridge"
+    private val externalOpenChannelName = "com.iamlouis.envelope/external_open"
     private val adbBridgeAction = "com.iamlouis.envelope.ADB"
+    private val envelopeMimeType = "application/vnd.westwardsoft.envelope"
+    private val legacyEnvelopeMimeType = "application/envelope"
     private val prefsName = "envelope_secure_store"
     private val identityKey = "identity_v1"
     private val chatStoreKey = "chat_store_v1"
@@ -63,6 +66,8 @@ class MainActivity : FlutterFragmentActivity() {
     private val folderTreeAccessRequestCode = 6120
     private val localBackupPickRequestCode = 6121
     private var adbBridgeChannel: MethodChannel? = null
+    private var externalOpenChannel: MethodChannel? = null
+    private var pendingExternalOpen: Map<String, Any?>? = null
     private var pendingOfflineEnvelopePickResult: MethodChannel.Result? = null
     private var pendingFileForSealingPickResult: MethodChannel.Result? = null
     private var pendingLocalBackupPickResult: MethodChannel.Result? = null
@@ -199,7 +204,22 @@ class MainActivity : FlutterFragmentActivity() {
             flutterEngine.dartExecutor.binaryMessenger,
             adbBridgeChannelName,
         )
+        externalOpenChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            externalOpenChannelName,
+        ).also { channel ->
+            channel.setMethodCallHandler { call, result ->
+                if (call.method == "consumeInitialOpen") {
+                    val pending = pendingExternalOpen
+                    pendingExternalOpen = null
+                    result.success(pending)
+                } else {
+                    result.notImplemented()
+                }
+            }
+        }
         val initialIntent = intent
+        handleExternalOpenIntent(initialIntent, notifyFlutter = false)
         Handler(Looper.getMainLooper()).postDelayed({
             handleAdbIntent(initialIntent)
         }, 1000)
@@ -208,7 +228,65 @@ class MainActivity : FlutterFragmentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        handleExternalOpenIntent(intent, notifyFlutter = true)
         handleAdbIntent(intent)
+    }
+
+    private fun handleExternalOpenIntent(intent: Intent?, notifyFlutter: Boolean) {
+        val payload = externalOpenPayload(intent) ?: return
+        pendingExternalOpen = payload
+        if (notifyFlutter) {
+            externalOpenChannel?.invokeMethod(
+                "externalOpen",
+                payload,
+                object : MethodChannel.Result {
+                    override fun success(result: Any?) {
+                        if (pendingExternalOpen == payload) pendingExternalOpen = null
+                    }
+
+                    override fun error(errorCode: String, errorMessage: String?, errorDetails: Any?) {
+                        // Keep the request pending until Flutter consumes it after initialization.
+                    }
+
+                    override fun notImplemented() {
+                        // Keep the request pending until Flutter installs its handler.
+                    }
+                },
+            )
+        }
+    }
+
+    private fun externalOpenPayload(intent: Intent?): Map<String, Any?>? {
+        if (intent?.action != Intent.ACTION_VIEW) return null
+        val uri = intent.data ?: return null
+        if (uri.scheme.equals("envelope", ignoreCase = true)) {
+            if (!uri.host.equals("yourturn", ignoreCase = true) ||
+                uri.path != "/open" ||
+                uri.query != null ||
+                uri.fragment != null
+            ) {
+                return null
+            }
+            return mapOf("kind" to "open")
+        }
+        if (uri.scheme != "content" && uri.scheme != "file") return null
+
+        val name = displayNameForUri(uri)
+        val mime = intent.type ?: contentResolver.getType(uri) ?: "application/octet-stream"
+        if (mime != envelopeMimeType &&
+            mime != legacyEnvelopeMimeType &&
+            !name.endsWith(".envelope", ignoreCase = true)
+        ) {
+            return null
+        }
+        persistReadPermission(intent, uri)
+        return mapOf(
+            "kind" to "file",
+            "name" to name,
+            "mime" to mime,
+            "uri" to uri.toString(),
+            "size" to sizeForUri(uri),
+        )
     }
 
     @Deprecated("Deprecated in Java")
@@ -901,8 +979,9 @@ class MainActivity : FlutterFragmentActivity() {
             requestCode = offlineEnvelopePickRequestCode,
             result = result,
             mimeTypes = arrayOf(
+                envelopeMimeType,
                 "application/octet-stream",
-                "application/envelope",
+                legacyEnvelopeMimeType,
                 "text/plain",
             ),
             unavailableMessage = "未找到可用的系统文件选择器。请启用/安装文件管理器，或改用 base64 粘贴导入。",
@@ -1142,7 +1221,7 @@ class MainActivity : FlutterFragmentActivity() {
         val bytes = args["bytes"] as? ByteArray ?: error("bytes are required")
         saveBytesToDownloadsEnvelope(
             requestedName = requestedName,
-            mime = "application/octet-stream",
+            mime = envelopeMimeType,
             bytes = bytes,
             childDir = "sealed",
             result = result,

@@ -7,6 +7,12 @@ namespace Envelope.Windows.Core.Native;
 
 public sealed class EnvelopeNativeClient : IEnvelopeNativeClient
 {
+    public JsonElement HaV2(string requestJson)
+    {
+        using var request = new Utf8String(requestJson, sensitive: true);
+        return Invoke<JsonElement>(() => NativeMethods.HaV2(request.Pointer));
+    }
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = false,

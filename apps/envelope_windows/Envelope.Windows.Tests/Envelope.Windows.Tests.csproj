@@ -9,11 +9,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="..\..\..\tests\fixtures\ha-v2\vectors.json" Link="ha-v2-vectors.json" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="..\Envelope.Windows.Core\Envelope.Windows.Core.csproj" />
     <Compile Include="..\Envelope.Windows\Services\IntroPayloadCodec.cs"
              Link="Shared\IntroPayloadCodec.cs" />
     <Compile Include="..\Envelope.Windows\Services\LocalUnlockCoordinator.cs"
              Link="Shared\LocalUnlockCoordinator.cs" />
+    <Compile Include="..\Envelope.Windows\Services\ExternalLaunchRequest.cs"
+             Link="Shared\ExternalLaunchRequest.cs" />
     <Compile Include="..\Envelope.Windows\Services\QrCodeService.cs"
              Link="Shared\QrCodeService.cs" />
   </ItemGroup>

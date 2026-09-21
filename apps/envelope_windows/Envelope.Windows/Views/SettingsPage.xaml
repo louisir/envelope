@@ -5,6 +5,9 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:services="clr-namespace:Envelope.Windows.Services"
              mc:Ignorable="d">
+    <UserControl.Resources>
+        <ResourceDictionary Source="/Envelope.Windows;component/Resources/IdentityIcons.xaml" />
+    </UserControl.Resources>
     <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
         <Grid MaxWidth="1100" Margin="38,32,38,48" HorizontalAlignment="Center">
             <Grid.RowDefinitions>
@@ -53,16 +56,15 @@
                                 </TextBlock.Style>
                             </TextBlock>
                         </StackPanel>
-                        <Border Grid.Column="2">
-                            <StackPanel Orientation="Horizontal">
-                                <Ellipse Width="7" Height="7" Margin="0,0,7,0" Fill="{DynamicResource Brush.Success}" />
-                                <TextBlock FontSize="11"
-                                           FontWeight="SemiBold"
-                                           Foreground="{DynamicResource Brush.Success}"
-                                           Text="{DynamicResource Common.Ready}" />
-                            </StackPanel>
+                        <Border Grid.Column="2" Width="36" Height="36" Padding="6" CornerRadius="9"
+                                VerticalAlignment="Center" Background="{DynamicResource Brush.SuccessSoft}"
+                                ToolTip="{DynamicResource Settings.IdentityReady}"
+                                AutomationProperties.Name="{DynamicResource Settings.IdentityReady}">
+                            <Canvas Width="24" Height="24">
+                                <Path Data="{StaticResource Icon.IdentityReady}" Fill="{DynamicResource Brush.Success}" />
+                            </Canvas>
                             <Border.Style>
-                                <Style TargetType="Border" BasedOn="{StaticResource StatusPill}">
+                                <Style TargetType="Border">
                                     <Setter Property="Visibility" Value="Collapsed" />
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding IsIdentityReady}" Value="True">
@@ -267,6 +269,10 @@
                 <Border Grid.Column="2" Style="{StaticResource Card}">
                     <StackPanel>
                         <TextBlock Style="{StaticResource Text.SectionTitle}" Text="{DynamicResource Settings.SecuritySection}" />
+                        <Button Content="{DynamicResource Passcode.Change}" Command="{Binding ChangeUnlockCodeCommand}"
+                                HorizontalAlignment="Left" Margin="0,14,0,0" />
+                        <TextBlock Text="{DynamicResource Passcode.SettingsHelp}" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource Brush.TextMuted}" FontSize="11" Margin="0,7,0,0" />
                         <Border Margin="0,14,0,0" Padding="14" Background="{DynamicResource Brush.SurfaceAlt}" CornerRadius="9">
                             <CheckBox IsChecked="{Binding LocalLockEnabled}" Style="{StaticResource Switch}">
                                 <StackPanel>

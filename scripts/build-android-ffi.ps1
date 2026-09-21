@@ -69,7 +69,9 @@ $dest = Join-Path $destDir "libenvelope_ffi.so"
 Push-Location $RepoRoot
 try {
     rustup target add $AndroidTarget
+    if ($LASTEXITCODE -ne 0) { throw "Failed to install Rust Android target: $LASTEXITCODE" }
     cargo build -p envelope-ffi --target $AndroidTarget --release
+    if ($LASTEXITCODE -ne 0) { throw "Android native build failed: $LASTEXITCODE; refusing to copy an older library." }
 
     if (-not (Test-Path -LiteralPath $source)) {
         throw "Rust build completed, but $source was not created."
