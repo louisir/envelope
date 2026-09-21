@@ -100,11 +100,24 @@ public sealed class MainWindowViewModel : ObservableObject
         {
             if (SetProperty(ref _selectedNavigation, value) && value is not null)
             {
+                OnPropertyChanged(nameof(SelectedPrimaryNavigation));
                 if (value.Section != NavigationSection.Settings)
                     Settings.ClearSensitiveInput();
                 CurrentPage = PageFor(value.Section);
                 Chat.IsReading = _windowReading && CurrentPage == Chat;
             }
+        }
+    }
+
+    // Settings/About are opened by separate buttons and are not members of the
+    // primary ListBox. Expose null there so its previous icon is actually deselected.
+    public NavigationItemViewModel? SelectedPrimaryNavigation
+    {
+        get => _selectedNavigation is { } selected && PrimaryNavigationItems.Contains(selected) ? selected : null;
+        set
+        {
+            // A selector clearing its highlight must not navigate away from Settings/About.
+            if (value is not null && PrimaryNavigationItems.Contains(value)) SelectedNavigation = value;
         }
     }
 

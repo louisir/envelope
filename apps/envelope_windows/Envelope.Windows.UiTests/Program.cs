@@ -146,6 +146,7 @@ internal static partial class Program
             var window = new MainWindow { DataContext = model, ShowActivated = false, ShowInTaskbar = false,
                 WindowStartupLocation = WindowStartupLocation.Manual, Left = -20000, Top = -20000, TrayAvailable = true };
             window.Show(); Pump();
+            VerifySidebarNavigation(window, model);
             Render(window, Path.Combine(output, "windows-chat-light.png"));
             model.Chat.MessageText = "刷新时保留的草稿";
             model.ApplySnapshot(service.Snapshot); Pump();

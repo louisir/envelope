@@ -44,7 +44,7 @@
                             <Button Click="About_Click" Content="&#xE897;" Style="{StaticResource Button.Icon}" ToolTip="{DynamicResource Nav.About}" Margin="0,4"/>
                         </StackPanel>
                         <Grid>
-                            <ListBox ItemsSource="{Binding PrimaryNavigationItems}" SelectedItem="{Binding SelectedNavigation, Mode=TwoWay}"
+                            <ListBox ItemsSource="{Binding PrimaryNavigationItems}" SelectedItem="{Binding SelectedPrimaryNavigation, Mode=TwoWay}"
                                      Background="Transparent" BorderThickness="0" VerticalAlignment="Top" ItemContainerStyle="{StaticResource NavigationItem}">
                                 <ListBox.ItemTemplate><DataTemplate>
                                     <StackPanel>
